@@ -22,7 +22,7 @@ import com.zmusic.app.database.dao.SongDao
         Favorite::class,
         HistoryEntry::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class ZMusicDatabase : RoomDatabase() {
