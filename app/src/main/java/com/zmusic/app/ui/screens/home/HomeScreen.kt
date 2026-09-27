@@ -20,10 +20,13 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Album
+import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.material.icons.filled.TrendingUp
+import androidx.compose.material.icons.filled.WifiOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -58,6 +61,9 @@ fun HomeScreen(
     favorites: List<Song>,
     artists: List<String>,
     albums: List<String>,
+    onlineDiscover: List<Song>,
+    onlineTrending: List<Song>,
+    isNetworkAvailable: Boolean,
     currentSong: Song?,
     onPlaySong: (Song, List<Song>) -> Unit,
     onStartRadio: (Song) -> Unit,
@@ -72,8 +78,8 @@ fun HomeScreen(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
     ) {
-        if (songs.isEmpty()) {
-            // Empty Library State (Feature 2 requirement)
+        if (songs.isEmpty() && (!isNetworkAvailable || onlineDiscover.isEmpty())) {
+            // Empty State
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -150,34 +156,104 @@ fun HomeScreen(
                                 letterSpacing = 2.sp
                             )
                             Text(
-                                text = "Personal Audio Player",
+                                text = if (isNetworkAvailable) "Online & Offline Music" else "Offline Local Player",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = TextSecondary
                             )
                         }
 
                         // Quick Mix Shuffle Button
+                        val mixPool = if (isNetworkAvailable && onlineDiscover.isNotEmpty()) songs + onlineDiscover else songs
+                        if (mixPool.isNotEmpty()) {
+                            Card(
+                                onClick = { onPlaySong(mixPool.shuffled().first(), mixPool.shuffled()) },
+                                colors = CardDefaults.cardColors(containerColor = SurfaceVariantDark),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Shuffle,
+                                        contentDescription = "Quick Mix",
+                                        tint = SecondaryCyan,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = "Quick Mix",
+                                        color = TextPrimary,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Offline Notice Banner (Smart Home Behavior - Feature 9)
+                if (!isNetworkAvailable) {
+                    item {
                         Card(
-                            onClick = { onPlaySong(songs.shuffled().first(), songs.shuffled()) },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 20.dp, vertical = 4.dp),
                             colors = CardDefaults.cardColors(containerColor = SurfaceVariantDark),
                             shape = RoundedCornerShape(12.dp)
                         ) {
                             Row(
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Icon(
-                                    imageVector = Icons.Default.Shuffle,
-                                    contentDescription = "Quick Mix",
+                                    imageVector = Icons.Default.WifiOff,
+                                    contentDescription = null,
                                     tint = SecondaryCyan,
-                                    modifier = Modifier.size(18.dp)
+                                    modifier = Modifier.size(20.dp)
                                 )
-                                Spacer(modifier = Modifier.width(6.dp))
+                                Spacer(modifier = Modifier.width(10.dp))
                                 Text(
-                                    text = "Quick Mix",
-                                    color = TextPrimary,
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.Medium
+                                    text = "Offline Mode — Showing local music library",
+                                    color = TextSecondary,
+                                    fontSize = 13.sp
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Online Discover Section (Visible when Online)
+                if (isNetworkAvailable && onlineDiscover.isNotEmpty()) {
+                    item {
+                        SectionHeader(title = "Discover Online", icon = Icons.Default.Explore)
+                        LazyRow(
+                            contentPadding = PaddingValues(horizontal = 20.dp),
+                            horizontalArrangement = Arrangement.spacedBy(14.dp)
+                        ) {
+                            items(onlineDiscover) { song ->
+                                SongCard(
+                                    song = song,
+                                    onClick = { onPlaySong(song, onlineDiscover) }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Online Trending Section (Visible when Online)
+                if (isNetworkAvailable && onlineTrending.isNotEmpty()) {
+                    item {
+                        SectionHeader(title = "Trending", icon = Icons.Default.TrendingUp)
+                        LazyRow(
+                            contentPadding = PaddingValues(horizontal = 20.dp),
+                            horizontalArrangement = Arrangement.spacedBy(14.dp)
+                        ) {
+                            items(onlineTrending) { song ->
+                                SongCard(
+                                    song = song,
+                                    onClick = { onPlaySong(song, onlineTrending) }
                                 )
                             }
                         }
@@ -239,28 +315,9 @@ fun HomeScreen(
                     }
                 }
 
-                // Albums Horizontal Section
-                if (albums.isNotEmpty()) {
-                    item {
-                        SectionHeader(title = "Albums")
-                        LazyRow(
-                            contentPadding = PaddingValues(horizontal = 20.dp),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            items(albums.take(8)) { albumName ->
-                                ChipCard(
-                                    title = albumName,
-                                    icon = Icons.Default.Album,
-                                    onClick = { onNavigateToAlbum(albumName) }
-                                )
-                            }
-                        }
-                    }
-                }
-
                 // Your Library (Vertical Song List)
                 item {
-                    SectionHeader(title = "Your Library (${songs.size} songs)")
+                    SectionHeader(title = "Your Local Library (${songs.size} songs)")
                 }
 
                 items(songs) { song ->
@@ -278,14 +335,30 @@ fun HomeScreen(
 }
 
 @Composable
-private fun SectionHeader(title: String) {
-    Text(
-        text = title,
-        style = MaterialTheme.typography.titleLarge,
-        fontWeight = FontWeight.Bold,
-        color = TextPrimary,
-        modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)
-    )
+private fun SectionHeader(
+    title: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector? = null
+) {
+    Row(
+        modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        if (icon != null) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = PrimaryPurple,
+                modifier = Modifier.size(22.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+        }
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold,
+            color = TextPrimary
+        )
+    }
 }
 
 @Composable

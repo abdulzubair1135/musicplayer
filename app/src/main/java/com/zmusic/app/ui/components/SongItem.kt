@@ -27,9 +27,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.zmusic.app.data.model.Song
+import com.zmusic.app.data.model.SourceType
 import com.zmusic.app.ui.theme.FavoriteRed
 import com.zmusic.app.ui.theme.PrimaryPurple
+import com.zmusic.app.ui.theme.SecondaryCyan
 import com.zmusic.app.ui.theme.TextPrimary
 import com.zmusic.app.ui.theme.TextSecondary
 
@@ -64,12 +67,22 @@ fun SongItem(
         Column(
             modifier = Modifier.weight(1f)
         ) {
-            Text(
-                text = song.title,
-                color = if (isCurrentPlaying) PrimaryPurple else TextPrimary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = song.title,
+                    color = if (isCurrentPlaying) PrimaryPurple else TextPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                // Source Type Badge Indicator
+                Text(
+                    text = if (song.sourceType == SourceType.ONLINE) "🌐 Online" else "🎵 Local",
+                    fontSize = 10.sp,
+                    color = if (song.sourceType == SourceType.ONLINE) SecondaryCyan else TextSecondary
+                )
+            }
             Text(
                 text = "${song.artist} • ${formatDuration(song.duration)}",
                 color = TextSecondary,

@@ -6,8 +6,12 @@ import com.zmusic.app.data.model.HistoryEntry
 import com.zmusic.app.data.model.Playlist
 import com.zmusic.app.data.model.PlaylistSongCrossRef
 import com.zmusic.app.data.model.Song
+import com.zmusic.app.data.model.SourceType
+import com.zmusic.app.data.provider.LocalMusicProvider
+import com.zmusic.app.data.provider.OnlineMusicProvider
 import com.zmusic.app.data.scanner.LocalMusicScanner
 import com.zmusic.app.database.ZMusicDatabase
+import com.zmusic.app.util.NetworkObserver
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 
@@ -19,10 +23,18 @@ class MusicRepository(context: Context) {
     private val historyDao = db.historyDao()
     private val scanner = LocalMusicScanner(context)
     private val recommendationEngine = RecommendationEngine()
+    private val networkObserver = NetworkObserver(context)
+
+    val localProvider = LocalMusicProvider(songDao)
+    val onlineProvider = OnlineMusicProvider()
+
+    val isNetworkAvailable: Flow<Boolean> = networkObserver.isConnected
 
     fun getAllSongs(): Flow<List<Song>> = songDao.getAllSongs()
     fun getSongCount(): Flow<Int> = songDao.getSongCount()
-    fun searchSongs(query: String): Flow<List<Song>> = songDao.searchSongs(query)
+
+    fun searchLocalSongs(query: String): Flow<List<Song>> = songDao.searchSongs(query)
+    fun searchOnlineSongs(query: String): Flow<List<Song>> = onlineProvider.searchSongs(query)
 
     suspend fun scanMusic(): Int = scanner.scanLocalMusic()
 
@@ -34,6 +46,9 @@ class MusicRepository(context: Context) {
 
     fun getAllGenres(): Flow<List<String>> = songDao.getAllGenres()
     fun getSongsByGenre(genre: String): Flow<List<Song>> = songDao.getSongsByGenre(genre)
+
+    suspend fun getOnlineDiscover(): List<Song> = onlineProvider.getDiscoverSection()
+    suspend fun getOnlineTrending(): List<Song> = onlineProvider.getTrending()
 
     // Playlists
     fun getAllPlaylists(): Flow<List<Playlist>> = playlistDao.getAllPlaylists()
@@ -67,30 +82,40 @@ class MusicRepository(context: Context) {
     fun getFavoriteSongs(): Flow<List<Song>> = favoriteDao.getFavoriteSongs()
     fun isFavorite(songId: Long): Flow<Boolean> = favoriteDao.isFavorite(songId)
 
-    suspend fun toggleFavorite(songId: Long) {
-        val isFav = favoriteDao.isFavoriteDirect(songId)
+    suspend fun toggleFavorite(song: Song) {
+        val isFav = favoriteDao.isFavoriteDirect(song.id)
         if (isFav) {
-            favoriteDao.removeFavorite(songId)
+            favoriteDao.removeFavorite(song.id)
         } else {
-            favoriteDao.addFavorite(Favorite(songId = songId))
+            // Ensure song exists in local DB so foreign keys resolve if favoriting
+            if (song.sourceType == SourceType.ONLINE) {
+                songDao.insertSongs(listOf(song))
+            }
+            favoriteDao.addFavorite(Favorite(songId = song.id))
         }
     }
 
     // History
     fun getRecentlyPlayed(): Flow<List<Song>> = historyDao.getRecentlyPlayedSongs()
 
-    suspend fun recordPlayHistory(songId: Long) {
-        historyDao.insertHistory(HistoryEntry(songId = songId))
+    suspend fun recordPlayHistory(song: Song) {
+        if (song.sourceType == SourceType.ONLINE) {
+            songDao.insertSongs(listOf(song))
+        }
+        historyDao.insertHistory(HistoryEntry(songId = song.id))
     }
 
     suspend fun clearHistory() {
         historyDao.clearHistory()
     }
 
-    // Song Radio Recommendation
-    suspend fun getSongRadioQueue(seedSong: Song): List<Song> {
-        val allSongs = songDao.getAllSongs().first()
+    // Radio
+    suspend fun getSongRadioQueue(seedSong: Song, isOnlineAvailable: Boolean): List<Song> {
+        if (seedSong.sourceType == SourceType.ONLINE && isOnlineAvailable) {
+            return onlineProvider.getRadioForSong(seedSong)
+        }
+        val allLocal = songDao.getAllSongs().first()
         val recentIds = historyDao.getRecentSongIds()
-        return recommendationEngine.generateSongRadio(seedSong, allSongs, recentIds)
+        return recommendationEngine.generateSongRadio(seedSong, allLocal, recentIds)
     }
 }

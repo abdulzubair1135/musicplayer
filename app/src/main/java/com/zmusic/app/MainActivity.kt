@@ -124,12 +124,28 @@ class MainActivity : ComponentActivity() {
         val playerController = app.playerController
         val scope = rememberCoroutineScope()
 
+        val isNetworkAvailable by repository.isNetworkAvailable.collectAsState(initial = true)
         val allSongs by repository.getAllSongs().collectAsState(initial = emptyList())
         val recentlyPlayed by repository.getRecentlyPlayed().collectAsState(initial = emptyList())
         val favorites by repository.getFavoriteSongs().collectAsState(initial = emptyList())
         val playlists by repository.getAllPlaylists().collectAsState(initial = emptyList())
         val artists by repository.getAllArtists().collectAsState(initial = emptyList())
         val albums by repository.getAllAlbums().collectAsState(initial = emptyList())
+
+        var onlineDiscover by remember { mutableStateOf<List<Song>>(emptyList()) }
+        var onlineTrending by remember { mutableStateOf<List<Song>>(emptyList()) }
+
+        LaunchedEffect(isNetworkAvailable) {
+            if (isNetworkAvailable) {
+                try {
+                    onlineDiscover = repository.getOnlineDiscover()
+                    onlineTrending = repository.getOnlineTrending()
+                } catch (e: Exception) {
+                    onlineDiscover = emptyList()
+                    onlineTrending = emptyList()
+                }
+            }
+        }
 
         val currentSong by playerController.currentSong.collectAsState()
         val isPlaying by playerController.isPlaying.collectAsState()
@@ -160,13 +176,13 @@ class MainActivity : ComponentActivity() {
         val playSongAction: (Song, List<Song>) -> Unit = { song, list ->
             playerController.playQueue(list, list.indexOf(song).coerceAtLeast(0))
             scope.launch {
-                repository.recordPlayHistory(song.id)
+                repository.recordPlayHistory(song)
             }
         }
 
         val startRadioAction: (Song) -> Unit = { seedSong ->
             scope.launch {
-                val radioList = repository.getSongRadioQueue(seedSong)
+                val radioList = repository.getSongRadioQueue(seedSong, isNetworkAvailable)
                 if (radioList.isNotEmpty()) {
                     playerController.playQueue(radioList, 0)
                     Toast.makeText(this@MainActivity, "Song Radio started for ${seedSong.title}", Toast.LENGTH_SHORT).show()
@@ -177,7 +193,6 @@ class MainActivity : ComponentActivity() {
         Scaffold(
             bottomBar = {
                 Column {
-                    // Mini Player visible above bottom nav when currentSong is playing/selected
                     AnimatedVisibility(
                         visible = currentSong != null && !isFullPlayerExpanded,
                         enter = slideInVertically(initialOffsetY = { it }),
@@ -196,7 +211,6 @@ class MainActivity : ComponentActivity() {
                         }
                     }
 
-                    // Bottom Navigation Bar
                     NavigationBar(
                         containerColor = SurfaceDark,
                         contentColor = TextPrimary
@@ -254,10 +268,13 @@ class MainActivity : ComponentActivity() {
                             favorites = favorites,
                             artists = artists,
                             albums = albums,
+                            onlineDiscover = onlineDiscover,
+                            onlineTrending = onlineTrending,
+                            isNetworkAvailable = isNetworkAvailable,
                             currentSong = currentSong,
                             onPlaySong = playSongAction,
                             onStartRadio = startRadioAction,
-                            onToggleFavorite = { song -> scope.launch { repository.toggleFavorite(song.id) } },
+                            onToggleFavorite = { song -> scope.launch { repository.toggleFavorite(song) } },
                             onScanMusic = { triggerMusicScan() },
                             onNavigateToArtist = { },
                             onNavigateToAlbum = { }
@@ -266,11 +283,13 @@ class MainActivity : ComponentActivity() {
 
                     composable(Screen.Search.route) {
                         SearchScreen(
-                            allSongs = allSongs,
+                            allLocalSongs = allSongs,
+                            onlineSongs = onlineDiscover + onlineTrending,
+                            isNetworkAvailable = isNetworkAvailable,
                             currentSong = currentSong,
                             onPlaySong = playSongAction,
                             onStartRadio = startRadioAction,
-                            onToggleFavorite = { song -> scope.launch { repository.toggleFavorite(song.id) } }
+                            onToggleFavorite = { song -> scope.launch { repository.toggleFavorite(song) } }
                         )
                     }
 
@@ -284,7 +303,7 @@ class MainActivity : ComponentActivity() {
                             onDeletePlaylist = { id -> scope.launch { repository.deletePlaylist(id) } },
                             onPlaySong = playSongAction,
                             onStartRadio = startRadioAction,
-                            onToggleFavorite = { song -> scope.launch { repository.toggleFavorite(song.id) } },
+                            onToggleFavorite = { song -> scope.launch { repository.toggleFavorite(song) } },
                             onSelectPlaylist = { playlist ->
                                 navController.navigate(Screen.PlaylistDetail.createRoute(playlist.id))
                             }
@@ -339,7 +358,7 @@ class MainActivity : ComponentActivity() {
                         onSeekTo = { pos -> playerController.seekTo(pos) },
                         onToggleShuffle = { playerController.toggleShuffle() },
                         onToggleRepeat = { playerController.toggleRepeat() },
-                        onToggleFavorite = { currentSong?.let { song -> scope.launch { repository.toggleFavorite(song.id) } } },
+                        onToggleFavorite = { currentSong?.let { song -> scope.launch { repository.toggleFavorite(song) } } },
                         onSetSleepTimer = { mins -> playerController.setSleepTimer(mins) },
                         onSelectQueueSong = { song -> playSongAction(song, currentQueue) }
                     )

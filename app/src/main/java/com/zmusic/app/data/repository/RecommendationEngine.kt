@@ -1,6 +1,7 @@
 package com.zmusic.app.data.repository
 
 import com.zmusic.app.data.model.Song
+import com.zmusic.app.data.model.SourceType
 
 class RecommendationEngine {
 
@@ -10,6 +11,7 @@ class RecommendationEngine {
      * - Same artist: +50 pts
      * - Same album: +30 pts
      * - Same genre: +20 pts
+     * - Same language: +15 pts
      * - History boost: +10 pts
      */
     fun generateSongRadio(
@@ -30,20 +32,32 @@ class RecommendationEngine {
             if (song.genre.equals(seedSong.genre, ignoreCase = true)) {
                 score += 20
             }
+            if (song.language.equals(seedSong.language, ignoreCase = true)) {
+                score += 15
+            }
             if (recentHistoryIds.contains(song.id)) {
                 score += 10
             }
-            // Add a small deterministic hash component to vary ties
             val hashBoost = (song.id xor seedSong.id).hashCode() % 5
             score += kotlin.math.abs(hashBoost)
 
             song to score
         }
 
-        // Sort by score descending and return
         val radioList = mutableListOf<Song>()
-        radioList.add(seedSong) // Start with seed song
+        radioList.add(seedSong)
         radioList.addAll(scoredSongs.sortedByDescending { it.second }.map { it.first })
         return radioList
+    }
+
+    /**
+     * Fallback strategy when internet is lost during Online Radio playback.
+     */
+    fun fallbackOnlineRadioToLocal(
+        onlineSeed: Song,
+        localSongs: List<Song>
+    ): List<Song> {
+        if (localSongs.isEmpty()) return emptyList()
+        return generateSongRadio(onlineSeed, localSongs)
     }
 }

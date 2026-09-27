@@ -34,13 +34,16 @@ import androidx.compose.ui.unit.dp
 import com.zmusic.app.data.model.Song
 import com.zmusic.app.ui.components.SongItem
 import com.zmusic.app.ui.theme.PrimaryPurple
+import com.zmusic.app.ui.theme.SecondaryCyan
 import com.zmusic.app.ui.theme.SurfaceDark
 import com.zmusic.app.ui.theme.TextPrimary
 import com.zmusic.app.ui.theme.TextSecondary
 
 @Composable
 fun SearchScreen(
-    allSongs: List<Song>,
+    allLocalSongs: List<Song>,
+    onlineSongs: List<Song>,
+    isNetworkAvailable: Boolean,
     currentSong: Song?,
     onPlaySong: (Song, List<Song>) -> Unit,
     onStartRadio: (Song) -> Unit,
@@ -49,12 +52,24 @@ fun SearchScreen(
 ) {
     var searchQuery by remember { mutableStateOf("") }
 
-    val filteredSongs = remember(searchQuery, allSongs) {
-        if (searchQuery.isBlank()) {
-            emptyList()
-        } else {
+    val filteredLocalSongs = remember(searchQuery, allLocalSongs) {
+        if (searchQuery.isBlank()) emptyList()
+        else {
             val q = searchQuery.trim().lowercase()
-            allSongs.filter { song ->
+            allLocalSongs.filter { song ->
+                song.title.lowercase().contains(q) ||
+                song.artist.lowercase().contains(q) ||
+                song.album.lowercase().contains(q) ||
+                song.genre.lowercase().contains(q)
+            }
+        }
+    }
+
+    val filteredOnlineSongs = remember(searchQuery, onlineSongs, isNetworkAvailable) {
+        if (searchQuery.isBlank() || !isNetworkAvailable) emptyList()
+        else {
+            val q = searchQuery.trim().lowercase()
+            onlineSongs.filter { song ->
                 song.title.lowercase().contains(q) ||
                 song.artist.lowercase().contains(q) ||
                 song.album.lowercase().contains(q) ||
@@ -124,12 +139,12 @@ fun SearchScreen(
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = "Type to search your local library",
+                    text = "Type to search local library & online music catalog",
                     style = MaterialTheme.typography.bodyLarge,
                     color = TextSecondary
                 )
             }
-        } else if (filteredSongs.isEmpty()) {
+        } else if (filteredLocalSongs.isEmpty() && filteredOnlineSongs.isEmpty()) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -147,23 +162,48 @@ fun SearchScreen(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(bottom = 120.dp)
             ) {
-                item {
-                    Text(
-                        text = "Results (${filteredSongs.size})",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = TextSecondary,
-                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
-                    )
+                // LOCAL RESULTS
+                if (filteredLocalSongs.isNotEmpty()) {
+                    item {
+                        Text(
+                            text = "LOCAL RESULTS (${filteredLocalSongs.size})",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = PrimaryPurple,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
+                        )
+                    }
+                    items(filteredLocalSongs) { song ->
+                        SongItem(
+                            song = song,
+                            isCurrentPlaying = song.id == currentSong?.id,
+                            onClick = { onPlaySong(song, filteredLocalSongs) },
+                            onStartRadio = { onStartRadio(song) },
+                            onToggleFavorite = { onToggleFavorite(song) }
+                        )
+                    }
                 }
 
-                items(filteredSongs) { song ->
-                    SongItem(
-                        song = song,
-                        isCurrentPlaying = song.id == currentSong?.id,
-                        onClick = { onPlaySong(song, filteredSongs) },
-                        onStartRadio = { onStartRadio(song) },
-                        onToggleFavorite = { onToggleFavorite(song) }
-                    )
+                // ONLINE RESULTS
+                if (filteredOnlineSongs.isNotEmpty()) {
+                    item {
+                        Text(
+                            text = "ONLINE RESULTS (${filteredOnlineSongs.size})",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = SecondaryCyan,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)
+                        )
+                    }
+                    items(filteredOnlineSongs) { song ->
+                        SongItem(
+                            song = song,
+                            isCurrentPlaying = song.id == currentSong?.id,
+                            onClick = { onPlaySong(song, filteredOnlineSongs) },
+                            onStartRadio = { onStartRadio(song) },
+                            onToggleFavorite = { onToggleFavorite(song) }
+                        )
+                    }
                 }
             }
         }
