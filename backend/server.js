@@ -55,15 +55,18 @@ function filterMusicResults(videos, options = {}) {
     'documentary', 'gameplay', 'tutorial', 'unboxing',
     'mashup', 'jukebox', '100 songs', 'top 50', 'top 100', 'top 20', 'top 30', 'top 40',
     'full album', 'compilation', 'non stop', 'non-stop', 'dj mix', 'megamix', 'hour loop',
-    'playlist', 'all songs', 'audio jukebox', 'jukebox'
+    'playlist', 'all songs', 'audio jukebox', 'greatest hits', 'most streamed', 'songs that own'
   ];
-  const maxDuration = options.maxDuration || 600; // max 10 mins (default)
-  const minDuration = options.minDuration || 45;  // min 45 secs
+  const maxDuration = options.maxDuration || (options.allowLong ? 10800 : 300); // 5 mins (300s) default!
+  const minDuration = options.minDuration || 35;  // min 35 secs
 
   return videos.filter(v => {
     const title = (v.title || '').toLowerCase();
     const hasBadKeyword = excludeKeywords.some(kw => title.includes(kw));
     const duration = v.duration?.seconds || 0;
+    if (options.allowLong) {
+      return !['podcast', 'interview', 'lecture', 'news', 'gameplay'].some(kw => title.includes(kw));
+    }
     return !hasBadKeyword && duration >= minDuration && duration <= maxDuration;
   });
 }
@@ -358,17 +361,17 @@ app.get('/api/info/:videoId', async (req, res) => {
 });
 
 // ── Trending ──
-// GET /api/trending?genre=pop
+// GET /api/trending?genre=pop&allowLong=false
 app.get('/api/trending', async (req, res) => {
   const genre = req.query.genre;
+  const allowLong = req.query.allowLong === 'true';
   const query = genre
     ? `${genre} songs official video`
     : 'trending songs 2024 official music video';
   try {
     const result = await ytSearch({ query });
-    const videos = filterMusicResults(result.videos || []).slice(0, 15);
-    const chosen = (videos.length >= 5 ? videos : (result.videos || [])).slice(0, 15);
-    res.json({ results: chosen.map(mapVideoToSong), genre: genre || 'trending' });
+    const videos = filterMusicResults(result.videos || [], { allowLong }).slice(0, 15);
+    res.json({ results: videos.map(mapVideoToSong), genre: genre || 'trending' });
   } catch (err) {
     console.error('Trending error:', err.message);
     res.status(500).json({ error: 'Could not fetch trending.' });
@@ -376,25 +379,35 @@ app.get('/api/trending', async (req, res) => {
 });
 
 // ── Discover by genre ──
-// GET /api/discover?genre=lofi
+// GET /api/discover?genre=lofi&allowLong=false
 const DISCOVER_GENRES = [
-  'top bollywood hit songs official video',
-  'trending pop music official audio',
-  'punjabi hit songs official audio',
-  'english hit songs official audio',
-  'lofi chill beats official',
+  'arijit singh official song',
+  'diljit dosanjh official music video',
+  'shreya ghoshal official song',
+  'ap dhillon official song',
+  'the weeknd official music video',
+  'ed sheeran official audio',
+  'atif aslam official song',
+  'taylor swift official music video',
+  'sidhu moose wala official song',
+  'alan walker official music video',
 ];
 
 app.get('/api/discover', async (req, res) => {
+  const allowLong = req.query.allowLong === 'true';
   const query = req.query.genre
-    ? `${req.query.genre} hit songs official audio`
+    ? `${req.query.genre} official song`
     : DISCOVER_GENRES[Math.floor(Math.random() * DISCOVER_GENRES.length)];
 
   try {
     const result = await ytSearch({ query });
-    const videos = filterMusicResults(result.videos || []).slice(0, 12);
-    const chosen = (videos.length >= 5 ? videos : (result.videos || [])).slice(0, 12);
-    res.json({ results: chosen.map(mapVideoToSong) });
+    let videos = filterMusicResults(result.videos || [], { allowLong });
+    // If strict filter yielded less than 4, take any individual track <= maxDuration
+    if (videos.length < 4) {
+      const maxDuration = allowLong ? 10800 : 300;
+      videos = (result.videos || []).filter(v => (v.duration?.seconds || 0) <= maxDuration && (v.duration?.seconds || 0) >= 30);
+    }
+    res.json({ results: videos.slice(0, 15).map(mapVideoToSong) });
   } catch (err) {
     console.error('Discover error:', err.message);
     res.status(500).json({ error: 'Could not fetch discover.' });
