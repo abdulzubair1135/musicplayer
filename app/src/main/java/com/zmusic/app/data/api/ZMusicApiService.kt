@@ -76,7 +76,8 @@ interface ZMusicApiService {
 
         /** Build the full streaming URL for a given videoId */
         fun streamUrl(videoId: String): String {
-            return "${ApiConfig.BASE_URL.trimEnd('/')}api/stream/$videoId"
+            val base = ApiConfig.BASE_URL.trimEnd('/')
+            return "$base/api/stream/$videoId"
         }
     }
 }
