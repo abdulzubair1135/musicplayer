@@ -93,6 +93,9 @@ app.get('/api/search', async (req, res) => {
 
   try {
     const cleanQ = query.trim();
+    const wantsKaraoke = cleanQ.toLowerCase().includes('karaoke');
+    const wantsInstrumental = cleanQ.toLowerCase().includes('instrumental');
+
     // For page > 1, use smart query variants so YouTube returns fresh, non-duplicate tracks!
     const searchVariants = [
       cleanQ,
@@ -108,14 +111,43 @@ app.get('/api/search', async (req, res) => {
       : `${baseQuery} music`;
 
     const result = await ytSearch({ query: searchQuery });
-    const videos = result.videos || [];
-    // Strictly filter out compilation playlists, multi-hour videos, and enforce max duration
-    let filtered = filterMusicResults(videos, { maxDuration, minDuration: 35 });
-    if (filtered.length === 0) {
-      // Fallback: only keep true individual tracks <= maxDuration
-      filtered = videos.filter(v => (v.duration?.seconds || 0) <= maxDuration && (v.duration?.seconds || 0) >= 30);
+    let candidateVideos = [...(result.videos || [])];
+
+    // If query returned few short tracks (like 'phonk' where YouTube returns mostly 1-hour mixes),
+    // automatically search high-density track variants in parallel to ensure a full list!
+    let initialFiltered = filterMusicResults(candidateVideos, { maxDuration, minDuration: 30 });
+    if (initialFiltered.length < 12) {
+      const extraQueries = [];
+      const lowerQ = cleanQ.toLowerCase();
+      if (lowerQ.includes('phonk') || lowerQ.includes('funk')) {
+        extraQueries.push('brazilian phonk slowed', 'montagem phonk', 'phonk viral audio', 'kordhell phonk');
+      } else {
+        extraQueries.push(`${cleanQ} official audio`, `${cleanQ} hit songs`);
+      }
+      const extraResults = await Promise.all(extraQueries.map(q => ytSearch({ query: q }).catch(() => ({ videos: [] }))));
+      for (const r of extraResults) {
+        if (r && r.videos) candidateVideos.push(...r.videos);
+      }
     }
-    const chosenVideos = filtered.slice(0, limit);
+
+    // Deduplicate and filter out karaoke/instrumental junk unless user explicitly searched for it
+    const seenIds = new Set();
+    const chosenVideos = [];
+    for (const v of candidateVideos) {
+      if (seenIds.has(v.videoId)) continue;
+      seenIds.add(v.videoId);
+
+      const titleLower = (v.title || '').toLowerCase();
+      if (!wantsKaraoke && (titleLower.includes('karaoke') || titleLower.includes('scrolling lyrics'))) continue;
+      if (!wantsInstrumental && (titleLower.includes('instrumental') || titleLower.includes('without music') || titleLower.includes('backing track'))) continue;
+      if (titleLower.includes('whatsapp status') || titleLower.includes('8k status') || titleLower.includes('status video')) continue;
+
+      const dur = v.duration?.seconds || 0;
+      if (dur < 30 || dur > maxDuration) continue;
+
+      chosenVideos.push(v);
+      if (chosenVideos.length >= limit) break;
+    }
 
     const songs = chosenVideos.map(mapVideoToSong);
     res.json({ results: songs, total: songs.length, query, page });
@@ -414,7 +446,7 @@ app.get('/api/discover', async (req, res) => {
   }
 });
 
-// ── Radio (related songs matching same vibe and genre) ──
+// ── Radio (smart related songs matching same vibe and genre) ──
 // GET /api/radio?videoId=xxx&title=song+name&artist=artist+name&allowLong=false
 app.get('/api/radio', async (req, res) => {
   const { title, artist } = req.query;
@@ -424,39 +456,90 @@ app.get('/api/radio', async (req, res) => {
   const cleanTitle = (title || '').toLowerCase().replace(/\(.*?\)|\[.*?\]/g, '').trim();
   const cleanArtist = (artist || '').toLowerCase().replace(/\(.*?\)|\[.*?\]/g, '').trim();
 
-  // Smart mood & genre detection: never jump abruptly between sad, phonk, romantic
-  let query;
+  // Smart multi-query mood & genre classification
+  let radioQueries = [];
   if (cleanTitle.includes('phonk') || cleanArtist.includes('phonk') || cleanTitle.includes('funk')) {
-    query = `${cleanArtist || cleanTitle} phonk music viral audio`;
+    radioQueries = [
+      'brazilian phonk slowed',
+      'montagem phonk',
+      'phonk viral audio',
+      'kordhell murder in my mind',
+      'dvrst close eyes'
+    ];
   } else if (cleanTitle.includes('lofi') || cleanArtist.includes('lofi') || cleanTitle.includes('chill')) {
-    query = `${cleanArtist || cleanTitle} lofi chill beats`;
-  } else if (cleanArtist.includes('arijit') || cleanTitle.includes('khairiyat') || cleanTitle.includes('sad') || cleanTitle.includes('dard')) {
-    query = `${cleanArtist || 'bollywood'} emotional sad hit songs official`;
-  } else if (cleanArtist.includes('punjabi') || cleanArtist.includes('aujla') || cleanArtist.includes('diljit') || cleanArtist.includes('sidhu') || cleanArtist.includes('dhillon')) {
-    query = `${cleanArtist || 'punjabi'} hit songs official audio`;
+    radioQueries = [
+      `${cleanArtist || cleanTitle} lofi chill beats`,
+      'hindi lofi chill beats official',
+      'lofi hip hop beats'
+    ];
+  } else if (
+    cleanArtist.includes('arijit') || cleanTitle.includes('khairiyat') ||
+    cleanTitle.includes('sad') || cleanTitle.includes('dard') ||
+    cleanTitle.includes('channa') || cleanTitle.includes('judai') ||
+    cleanTitle.includes('tujhe kitna') || cleanTitle.includes('agar tum')
+  ) {
+    radioQueries = [
+      'arijit singh official song',
+      'bollywood sad romantic hit song official video',
+      'arijit singh love songs official',
+      'mohit chauhan romantic hits official',
+      'pritam emotional hit songs'
+    ];
+  } else if (
+    cleanArtist.includes('punjabi') || cleanArtist.includes('aujla') ||
+    cleanArtist.includes('diljit') || cleanArtist.includes('sidhu') ||
+    cleanArtist.includes('dhillon') || cleanArtist.includes('shubh')
+  ) {
+    radioQueries = [
+      'punjabi hit songs official audio',
+      'diljit dosanjh hit songs official',
+      'ap dhillon official songs',
+      'karan aujla official audio',
+      'sidhu moose wala hit songs'
+    ];
   } else if (cleanArtist && cleanArtist !== 'unknown') {
-    query = `${cleanArtist} hit songs official audio`;
+    radioQueries = [
+      `${cleanArtist} hit songs official audio`,
+      `${cleanArtist} popular music video`,
+      `${cleanTitle} similar hit songs official`
+    ];
   } else {
-    query = `${cleanTitle} similar hit songs official`;
+    radioQueries = [
+      `${cleanTitle} similar hit songs official`,
+      'trending bollywood hit songs official'
+    ];
   }
 
   try {
-    const result = await ytSearch({ query });
-    const videos = result.videos || [];
-    // Filter out videos that are just the seed song itself or remixes of it
-    const seedWord = cleanTitle.split(' ')[0] || '';
-    const otherSongs = videos.filter(v => {
-      const t = (v.title || '').toLowerCase();
-      return seedWord.length < 3 || !t.includes(seedWord);
-    });
-
-    const candidateVideos = otherSongs.length >= 5 ? otherSongs : videos;
-    let filtered = filterMusicResults(candidateVideos, { maxDuration, minDuration: 35 });
-    if (filtered.length === 0) {
-      filtered = candidateVideos.filter(v => (v.duration?.seconds || 0) <= maxDuration && (v.duration?.seconds || 0) >= 30);
+    const results = await Promise.all(radioQueries.map(q => ytSearch({ query: q }).catch(() => ({ videos: [] }))));
+    const allVideos = [];
+    for (const r of results) {
+      if (r && r.videos) allVideos.push(...r.videos);
     }
 
-    const songs = filtered.slice(0, 20).map(mapVideoToSong);
+    // Extract seed keywords to strictly exclude the seed song itself and its duplicate remixes
+    const seedWords = cleanTitle.split(/\s+/).filter(w => w.length >= 3 && !['song', 'official', 'video', 'audio', 'full'].includes(w));
+    const seenIds = new Set();
+    const candidateSongs = [];
+
+    for (const v of allVideos) {
+      if (seenIds.has(v.videoId)) continue;
+      seenIds.add(v.videoId);
+
+      const t = (v.title || '').toLowerCase();
+      // Strictly exclude seed song itself (e.g. if seed is Khairiyat, do not include any Khairiyat versions)
+      if (seedWords.length > 0 && seedWords.some(w => t.includes(w))) continue;
+      // Exclude karaoke, instrumental, whatsapp status
+      if (t.includes('karaoke') || t.includes('instrumental') || t.includes('whatsapp status') || t.includes('8k status')) continue;
+
+      const dur = v.duration?.seconds || 0;
+      if (dur < 30 || dur > maxDuration) continue;
+
+      candidateSongs.push(v);
+      if (candidateSongs.length >= 25) break;
+    }
+
+    const songs = candidateSongs.map(mapVideoToSong);
     res.json({ results: songs });
   } catch (err) {
     console.error('Radio error:', err.message);
