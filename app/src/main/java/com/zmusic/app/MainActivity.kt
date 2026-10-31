@@ -343,15 +343,21 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize()
                 ) {
                     composable(Screen.Home.route) {
-                        val onlineRecentlyPlayed = remember(recentlyPlayed) {
+                        val onlineRecentlyPlayed = remember(recentlyPlayed, allowLongTracks) {
                             recentlyPlayed.filter {
-                                (it.sourceType == com.zmusic.app.data.model.SourceType.ONLINE || !it.videoId.isNullOrBlank())
-                                && (it.duration <= 0 || it.duration <= 600_000)
-                                && !it.title.contains("100 songs", ignoreCase = true)
-                                && !it.title.contains("top 50", ignoreCase = true)
-                                && !it.title.contains("top 100", ignoreCase = true)
-                                && !it.title.contains("mashup", ignoreCase = true)
-                                && !it.title.contains("jukebox", ignoreCase = true)
+                                val isOnline = (it.sourceType == com.zmusic.app.data.model.SourceType.ONLINE || !it.videoId.isNullOrBlank())
+                                val isNotMix = !it.title.contains("100 songs", ignoreCase = true)
+                                        && !it.title.contains("top 50", ignoreCase = true)
+                                        && !it.title.contains("top 100", ignoreCase = true)
+                                        && !it.title.contains("mashup", ignoreCase = true)
+                                        && !it.title.contains("jukebox", ignoreCase = true)
+                                        && !it.title.contains("compilation", ignoreCase = true)
+                                        && !it.title.contains("non stop", ignoreCase = true)
+                                        && !it.title.contains("nonstop", ignoreCase = true)
+                                        && !it.title.contains("megamix", ignoreCase = true)
+                                        && !it.title.contains("best of", ignoreCase = true)
+                                val durationOk = allowLongTracks || (it.duration in 1..300_000)
+                                isOnline && isNotMix && durationOk
                             }
                         }
                         HomeScreen(

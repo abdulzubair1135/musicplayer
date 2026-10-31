@@ -40,6 +40,7 @@ import com.zmusic.app.ui.theme.*
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.launch
 
 @OptIn(FlowPreview::class)
@@ -121,39 +122,39 @@ fun SearchScreen(
         }
     }
 
-    // ── Infinite Scroll Pagination ────────────────────────────────────────────
-    val shouldLoadMore by remember {
-        derivedStateOf {
+    // ── Infinite Scroll Pagination (Safe non-cancelling snapshotFlow) ───────
+    LaunchedEffect(listState, query, allowLongTracks) {
+        snapshotFlow {
             val totalItems = searchResults.size
             val lastVisibleIndex = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-            lastVisibleIndex >= totalItems - 4 && !isLoadingMore && !isSearching && hasMoreResults && searchResults.isNotEmpty()
+            totalItems > 0 && lastVisibleIndex >= (totalItems - 3)
         }
-    }
-
-    LaunchedEffect(shouldLoadMore) {
-        if (shouldLoadMore && isNetworkAvailable && query.length >= 2) {
-            try {
+        .filter { it }
+        .collect {
+            if (!isLoadingMore && !isSearching && hasMoreResults && isNetworkAvailable && query.length >= 2) {
                 isLoadingMore = true
-                val nextPage = currentPage + 1
-                val moreSongs = repository.searchOnlineSongs(query, page = nextPage, allowLong = allowLongTracks)
-                val cleanMore = if (allowLongTracks) moreSongs else moreSongs.filter { it.duration <= 300_000 }
-                if (cleanMore.isEmpty()) {
-                    hasMoreResults = false
-                } else {
-                    val currentIds = searchResults.map { it.id }.toSet()
-                    val newUnique = cleanMore.filterNot { currentIds.contains(it.id) }
-                    if (newUnique.isEmpty()) {
+                try {
+                    val nextPage = currentPage + 1
+                    val moreSongs = repository.searchOnlineSongs(query, page = nextPage, allowLong = allowLongTracks)
+                    val cleanMore = if (allowLongTracks) moreSongs else moreSongs.filter { it.duration <= 300_000 }
+                    if (cleanMore.isEmpty()) {
                         hasMoreResults = false
                     } else {
-                        searchResults = searchResults + newUnique
-                        currentPage = nextPage
+                        val currentIds = searchResults.map { it.id }.toSet()
+                        val newUnique = cleanMore.filterNot { currentIds.contains(it.id) }
+                        if (newUnique.isEmpty()) {
+                            hasMoreResults = false
+                        } else {
+                            searchResults = searchResults + newUnique
+                            currentPage = nextPage
+                        }
                     }
+                } catch (e: Exception) {
+                    android.util.Log.e("SearchScreen", "Pagination error", e)
+                    hasMoreResults = false
+                } finally {
+                    isLoadingMore = false
                 }
-            } catch (e: Exception) {
-                android.util.Log.e("SearchScreen", "Pagination error", e)
-                hasMoreResults = false
-            } finally {
-                isLoadingMore = false
             }
         }
     }
