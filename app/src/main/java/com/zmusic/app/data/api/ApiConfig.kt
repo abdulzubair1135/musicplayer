@@ -8,7 +8,7 @@ object ApiConfig {
     // For local development (PC and phone on same Wi-Fi):
     //   http://192.168.x.x:3000  (your PC's local IP)
     // ──────────────────────────────────────────────────────────────
-    const val BASE_URL = "https://zmusic-backend.onrender.com/"
+    const val BASE_URL = "https://musicplayer-blyl.onrender.com/"
 
     const val CONNECT_TIMEOUT_SECONDS = 30L
     const val READ_TIMEOUT_SECONDS    = 60L
