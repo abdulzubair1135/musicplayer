@@ -123,29 +123,51 @@ app.get('/api/stream/:videoId', async (req, res) => {
       proxyHeaders['Range'] = req.headers.range;
     }
 
-    const proxyReq = client.get(audioUrl, { headers: proxyHeaders }, (proxyRes) => {
-      res.writeHead(proxyRes.statusCode, {
-        'Content-Type': proxyRes.headers['content-type'] || 'audio/mp4',
-        'Content-Length': proxyRes.headers['content-length'] || format.contentLength,
-        'Accept-Ranges': 'bytes',
-        'Content-Range': proxyRes.headers['content-range'],
-        'Access-Control-Allow-Origin': '*',
-        'Cache-Control': 'no-cache',
+    const streamAudio = (targetUrl, redirectCount = 0) => {
+      if (redirectCount > 4) {
+        if (!res.headersSent) res.status(500).json({ error: 'Too many redirects' });
+        return;
+      }
+
+      const client = targetUrl.startsWith('https') ? https : http;
+      const proxyReq = client.get(targetUrl, { headers: proxyHeaders }, (proxyRes) => {
+        if (proxyRes.statusCode >= 300 && proxyRes.statusCode < 400 && proxyRes.headers.location) {
+          return streamAudio(proxyRes.headers.location, redirectCount + 1);
+        }
+
+        const outHeaders = {
+          'Content-Type': proxyRes.headers['content-type'] || 'audio/mp4',
+          'Accept-Ranges': 'bytes',
+          'Access-Control-Allow-Origin': '*',
+          'Cache-Control': 'no-cache',
+        };
+
+        const len = proxyRes.headers['content-length'] || format.contentLength;
+        if (len) {
+          outHeaders['Content-Length'] = len;
+        }
+
+        if (proxyRes.headers['content-range']) {
+          outHeaders['Content-Range'] = proxyRes.headers['content-range'];
+        }
+
+        res.writeHead(proxyRes.statusCode, outHeaders);
+        proxyRes.pipe(res);
       });
 
-      proxyRes.pipe(res);
-    });
+      proxyReq.on('error', (err) => {
+        console.error('Proxy stream error:', err.message);
+        if (!res.headersSent) {
+          res.status(500).json({ error: 'Stream failed' });
+        }
+      });
 
-    proxyReq.on('error', (err) => {
-      console.error('Proxy stream error:', err.message);
-      if (!res.headersSent) {
-        res.status(500).json({ error: 'Stream failed' });
-      }
-    });
+      req.on('close', () => {
+        proxyReq.destroy();
+      });
+    };
 
-    req.on('close', () => {
-      proxyReq.destroy();
-    });
+    streamAudio(audioUrl);
 
   } catch (err) {
     console.error('Stream error:', err.message);
