@@ -75,12 +75,14 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString(), version: '1.0.0' });
 });
 
-// ── Search with Pagination ──
-// GET /api/search?q=shape+of+you&page=1&limit=30
+// ── Search with Pagination & Duration Filter ──
+// GET /api/search?q=shape+of+you&page=1&limit=30&allowLong=false
 app.get('/api/search', async (req, res) => {
   const query = req.query.q;
   const page = Math.max(parseInt(req.query.page) || 1, 1);
   const limit = Math.min(parseInt(req.query.limit) || 30, 50);
+  const allowLong = req.query.allowLong === 'true';
+  const maxDuration = allowLong ? 10800 : 300; // 5 mins default!
 
   if (!query || query.trim().length < 2) {
     return res.status(400).json({ error: 'Query too short. Minimum 2 characters.' });
@@ -88,17 +90,27 @@ app.get('/api/search', async (req, res) => {
 
   try {
     const cleanQ = query.trim();
-    const searchQuery = cleanQ.toLowerCase().includes('song') || cleanQ.toLowerCase().includes('music')
-      ? cleanQ
-      : `${cleanQ} music`;
+    // For page > 1, use smart query variants so YouTube returns fresh, non-duplicate tracks!
+    const searchVariants = [
+      cleanQ,
+      `${cleanQ} songs`,
+      `${cleanQ} hit songs`,
+      `${cleanQ} official audio`,
+      `${cleanQ} similar tracks`,
+      `${cleanQ} popular`,
+    ];
+    const baseQuery = searchVariants[(page - 1) % searchVariants.length];
+    const searchQuery = baseQuery.toLowerCase().includes('song') || baseQuery.toLowerCase().includes('music')
+      ? baseQuery
+      : `${baseQuery} music`;
 
-    const result = await ytSearch({ query: searchQuery, pageStart: page, pageEnd: page + 1 });
+    const result = await ytSearch({ query: searchQuery });
     const videos = result.videos || [];
-    // Strictly filter out compilation playlists and multi-hour videos
-    let filtered = filterMusicResults(videos);
+    // Strictly filter out compilation playlists, multi-hour videos, and enforce max duration
+    let filtered = filterMusicResults(videos, { maxDuration, minDuration: 35 });
     if (filtered.length === 0) {
-      // Fallback: only keep true individual tracks <= 10 minutes (600s)
-      filtered = videos.filter(v => (v.duration?.seconds || 0) <= 600 && (v.duration?.seconds || 0) >= 30);
+      // Fallback: only keep true individual tracks <= maxDuration
+      filtered = videos.filter(v => (v.duration?.seconds || 0) <= maxDuration && (v.duration?.seconds || 0) >= 30);
     }
     const chosenVideos = filtered.slice(0, limit);
 
@@ -389,16 +401,50 @@ app.get('/api/discover', async (req, res) => {
   }
 });
 
-// ── Radio (related songs) ──
-// GET /api/radio?videoId=xxx&title=song+name&artist=artist+name
+// ── Radio (related songs matching same vibe and genre) ──
+// GET /api/radio?videoId=xxx&title=song+name&artist=artist+name&allowLong=false
 app.get('/api/radio', async (req, res) => {
   const { title, artist } = req.query;
-  const query = title ? `${title} ${artist || ''} similar songs` : 'top music mix 2024';
+  const allowLong = req.query.allowLong === 'true';
+  const maxDuration = allowLong ? 10800 : 300; // 5 mins default!
+
+  const cleanTitle = (title || '').toLowerCase().replace(/\(.*?\)|\[.*?\]/g, '').trim();
+  const cleanArtist = (artist || '').toLowerCase().replace(/\(.*?\)|\[.*?\]/g, '').trim();
+
+  // Smart mood & genre detection: never jump abruptly between sad, phonk, romantic
+  let query;
+  if (cleanTitle.includes('phonk') || cleanArtist.includes('phonk') || cleanTitle.includes('funk')) {
+    query = `${cleanArtist || cleanTitle} phonk music viral audio`;
+  } else if (cleanTitle.includes('lofi') || cleanArtist.includes('lofi') || cleanTitle.includes('chill')) {
+    query = `${cleanArtist || cleanTitle} lofi chill beats`;
+  } else if (cleanArtist.includes('arijit') || cleanTitle.includes('khairiyat') || cleanTitle.includes('sad') || cleanTitle.includes('dard')) {
+    query = `${cleanArtist || 'bollywood'} emotional sad hit songs official`;
+  } else if (cleanArtist.includes('punjabi') || cleanArtist.includes('aujla') || cleanArtist.includes('diljit') || cleanArtist.includes('sidhu') || cleanArtist.includes('dhillon')) {
+    query = `${cleanArtist || 'punjabi'} hit songs official audio`;
+  } else if (cleanArtist && cleanArtist !== 'unknown') {
+    query = `${cleanArtist} hit songs official audio`;
+  } else {
+    query = `${cleanTitle} similar hit songs official`;
+  }
 
   try {
-    const result = await ytSearch({ query: query.trim() + ' music' });
-    const videos = filterMusicResults(result.videos || []).slice(0, 20);
-    res.json({ results: videos.map(mapVideoToSong) });
+    const result = await ytSearch({ query });
+    const videos = result.videos || [];
+    // Filter out videos that are just the seed song itself or remixes of it
+    const seedWord = cleanTitle.split(' ')[0] || '';
+    const otherSongs = videos.filter(v => {
+      const t = (v.title || '').toLowerCase();
+      return seedWord.length < 3 || !t.includes(seedWord);
+    });
+
+    const candidateVideos = otherSongs.length >= 5 ? otherSongs : videos;
+    let filtered = filterMusicResults(candidateVideos, { maxDuration, minDuration: 35 });
+    if (filtered.length === 0) {
+      filtered = candidateVideos.filter(v => (v.duration?.seconds || 0) <= maxDuration && (v.duration?.seconds || 0) >= 30);
+    }
+
+    const songs = filtered.slice(0, 20).map(mapVideoToSong);
+    res.json({ results: songs });
   } catch (err) {
     console.error('Radio error:', err.message);
     res.status(500).json({ error: 'Could not generate radio.' });
