@@ -86,6 +86,23 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// Diagnostic route
+app.get('/api/test-ytdl', async (req, res) => {
+  const id = req.query.id || 'mZQH8CPQ-wo';
+  const steps = [];
+  const start = Date.now();
+  try {
+    steps.push({ step: 'start', elapsed: Date.now() - start });
+    const info = await ytdl.getInfo(id);
+    steps.push({ step: 'got_info', elapsed: Date.now() - start, formats: info?.formats?.length || 0 });
+    const audioFormats = (info?.formats || []).filter(f => f.hasAudio && !f.hasVideo && f.url);
+    steps.push({ step: 'audio_formats', count: audioFormats.length, sampleUrl: audioFormats[0]?.url?.substring(0, 50) });
+    res.json({ ok: true, elapsed: Date.now() - start, steps });
+  } catch (err) {
+    res.status(500).json({ ok: false, elapsed: Date.now() - start, error: err.message, stack: err.stack, steps });
+  }
+});
+
 // In-memory cache for ultra-fast searches and zero CPU waste on Render
 const searchCache = new Map();
 const SEARCH_CACHE_TTL = 15 * 60 * 1000; // 15 minutes
