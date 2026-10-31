@@ -98,6 +98,68 @@ app.get('/api/search', async (req, res) => {
   }
 });
 
+// ── Synced Lyrics ──
+// GET /api/lyrics?title=shape+of+you&artist=ed+sheeran
+app.get('/api/lyrics', async (req, res) => {
+  const { title, artist, duration } = req.query;
+  if (!title) {
+    return res.status(400).json({ error: 'Title required' });
+  }
+
+  // Clean title: remove "Official Video", "(Lyrics)", etc.
+  const cleanTitle = title
+    .replace(/\(.*?\)|\[.*?\]/g, '')
+    .replace(/official|music|video|audio|lyrics|feat\..*|ft\..*/gi, '')
+    .trim();
+
+  const cleanArtist = (artist || '')
+    .replace(/\(.*?\)|\[.*?\]/g, '')
+    .replace(/vevo|topic|records/gi, '')
+    .trim();
+
+  try {
+    const params = new URLSearchParams({ track_name: cleanTitle });
+    if (cleanArtist && cleanArtist !== 'Unknown') params.append('artist_name', cleanArtist);
+    if (duration) params.append('duration', Math.round(duration / 1000));
+
+    const response = await fetch(`https://lrclib.net/api/get?${params.toString()}`, {
+      headers: { 'User-Agent': 'Z-Music/1.0 (https://github.com/abdulzubair1135/musicplayer)' }
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      return res.json({
+        syncedLyrics: data.syncedLyrics || null,
+        plainLyrics: data.plainLyrics || null,
+        instrumental: data.instrumental || false
+      });
+    }
+
+    // Fallback search
+    const searchParams = new URLSearchParams({ q: `${cleanTitle} ${cleanArtist}`.trim() });
+    const searchRes = await fetch(`https://lrclib.net/api/search?${searchParams.toString()}`, {
+      headers: { 'User-Agent': 'Z-Music/1.0 (https://github.com/abdulzubair1135/musicplayer)' }
+    });
+
+    if (searchRes.ok) {
+      const results = await searchRes.json();
+      const match = results.find(r => r.syncedLyrics) || results[0];
+      if (match) {
+        return res.json({
+          syncedLyrics: match.syncedLyrics || null,
+          plainLyrics: match.plainLyrics || null,
+          instrumental: match.instrumental || false
+        });
+      }
+    }
+
+    res.status(404).json({ error: 'No lyrics found' });
+  } catch (err) {
+    console.error('Lyrics fetch error:', err.message);
+    res.status(500).json({ error: 'Failed to fetch lyrics' });
+  }
+});
+
 const https = require('https');
 const http = require('http');
 
