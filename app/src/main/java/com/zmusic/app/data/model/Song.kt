@@ -5,7 +5,8 @@ import androidx.room.PrimaryKey
 
 enum class SourceType {
     LOCAL,
-    ONLINE
+    ONLINE,
+    DOWNLOADED   // YouTube song saved to offline storage
 }
 
 @Entity(tableName = "songs")
@@ -24,6 +25,7 @@ data class Song(
     val year: Int = 0,
     val sourceType: SourceType = SourceType.LOCAL,
     val streamUri: String? = null,
+    val videoId: String? = null,      // YouTube videoId for streaming/download
     val dateAdded: Long = System.currentTimeMillis()
 )
 

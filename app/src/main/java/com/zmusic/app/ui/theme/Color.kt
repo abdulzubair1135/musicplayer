@@ -15,3 +15,4 @@ val TextSecondary = Color(0xFF94A3B8)
 val TextMuted = Color(0xFF64748B)
 
 val FavoriteRed = Color(0xFFEF4444)
+val AccentCyan  = Color(0xFF06B6D4)   // alias for SecondaryCyan

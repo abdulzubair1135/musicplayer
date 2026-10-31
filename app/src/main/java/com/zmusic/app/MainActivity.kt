@@ -284,7 +284,7 @@ class MainActivity : ComponentActivity() {
                     composable(Screen.Search.route) {
                         SearchScreen(
                             allLocalSongs = allSongs,
-                            onlineSongs = onlineDiscover + onlineTrending,
+                            onlineSongs = emptyList(),
                             isNetworkAvailable = isNetworkAvailable,
                             currentSong = currentSong,
                             onPlaySong = playSongAction,
