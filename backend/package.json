@@ -11,14 +11,15 @@
     "node": ">=18.0.0"
   },
   "dependencies": {
-    "express": "^4.18.2",
-    "cors": "^2.8.5",
-    "yt-search": "^2.10.4",
-    "@distube/ytdl-core": "^4.14.4",
-    "dotenv": "^16.3.1",
+    "@distube/ytdl-core": "^5.2.0",
     "compression": "^1.7.4",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "express-rate-limit": "^7.1.5",
     "morgan": "^1.10.0",
-    "express-rate-limit": "^7.1.5"
+    "play-dl": "^1.9.7",
+    "yt-search": "^2.10.4"
   },
   "devDependencies": {
     "nodemon": "^3.0.2"

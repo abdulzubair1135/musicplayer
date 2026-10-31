@@ -5,7 +5,8 @@ const compression = require('compression');
 const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
 const ytSearch = require('yt-search');
-const ytdl = require('@distube/ytdl-core');
+const { Ytdl, chooseFormat } = require('@distube/ytdl-core');
+const ytdl = new Ytdl();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -100,13 +101,10 @@ app.get('/api/stream/:videoId', async (req, res) => {
   }
 
   try {
-    const url = `https://www.youtube.com/watch?v=${videoId}`;
-
-    // Fetch info first to get content length for range support
-    const info = await ytdl.getInfo(url);
-    const format = ytdl.chooseFormat(info.formats, {
+    const info = await ytdl.getInfo(videoId);
+    const format = chooseFormat(info.formats, {
+      filter: f => f.hasAudio && !f.hasVideo,
       quality: 'highestaudio',
-      filter: 'audioonly',
     });
 
     if (!format) {
@@ -114,32 +112,27 @@ app.get('/api/stream/:videoId', async (req, res) => {
     }
 
     const contentLength = format.contentLength;
-    const rangeHeader = req.headers.range;
+    const mime = format.mimeType?.split(';')[0] || 'audio/webm';
 
-    res.setHeader('Content-Type', 'audio/mpeg');
+    res.setHeader('Content-Type', mime);
     res.setHeader('Accept-Ranges', 'bytes');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('X-Content-Type-Options', 'nosniff');
 
-    if (rangeHeader && contentLength) {
-      const [startStr, endStr] = rangeHeader.replace('bytes=', '').split('-');
-      const start = parseInt(startStr, 10);
-      const end = endStr ? parseInt(endStr, 10) : parseInt(contentLength) - 1;
-      const chunkSize = end - start + 1;
-
-      res.setHeader('Content-Range', `bytes ${start}-${end}/${contentLength}`);
-      res.setHeader('Content-Length', chunkSize);
-      res.status(206);
-
-      ytdl(url, {
-        format,
-        range: { start, end },
-      }).pipe(res);
-    } else {
-      if (contentLength) res.setHeader('Content-Length', contentLength);
-      res.status(200);
-      ytdl(url, { format }).pipe(res);
+    if (contentLength) {
+      res.setHeader('Content-Length', contentLength);
     }
+    res.status(200);
+
+    const stream = await ytdl.download(videoId, { format });
+    stream.pipe(res);
+
+    stream.on('error', err => {
+      console.error('Stream pipe error:', err.message);
+      if (!res.headersSent) {
+        res.status(500).end();
+      }
+    });
 
   } catch (err) {
     console.error('Stream error:', err.message);
@@ -159,11 +152,10 @@ app.get('/api/download/:videoId', async (req, res) => {
   }
 
   try {
-    const url = `https://www.youtube.com/watch?v=${videoId}`;
-    const info = await ytdl.getInfo(url);
-    const format = ytdl.chooseFormat(info.formats, {
+    const info = await ytdl.getInfo(videoId);
+    const format = chooseFormat(info.formats, {
+      filter: f => f.hasAudio && !f.hasVideo,
       quality: 'highestaudio',
-      filter: 'audioonly',
     });
 
     if (!format) {
@@ -171,14 +163,24 @@ app.get('/api/download/:videoId', async (req, res) => {
     }
 
     const title = (info.videoDetails?.title || videoId).replace(/[^a-zA-Z0-9_-]/g, '_');
-    res.setHeader('Content-Disposition', `attachment; filename="${title}.m4a"`);
-    res.setHeader('Content-Type', 'audio/mp4');
+    const ext = format.mimeType?.includes('mp4') ? 'm4a' : 'webm';
+
+    res.setHeader('Content-Disposition', `attachment; filename="${title}.${ext}"`);
+    res.setHeader('Content-Type', format.mimeType?.split(';')[0] || 'audio/webm');
 
     if (format.contentLength) {
       res.setHeader('Content-Length', format.contentLength);
     }
 
-    ytdl(url, { format }).pipe(res);
+    const stream = await ytdl.download(videoId, { format });
+    stream.pipe(res);
+
+    stream.on('error', err => {
+      console.error('Download pipe error:', err.message);
+      if (!res.headersSent) {
+        res.status(500).end();
+      }
+    });
   } catch (err) {
     console.error('Download error:', err.message);
     if (!res.headersSent) {
