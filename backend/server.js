@@ -51,13 +51,13 @@ function mapVideoToSong(v) {
 // Filter out likely non-music results
 function filterMusicResults(videos) {
   const excludeKeywords = ['podcast', 'interview', 'lecture', 'news', 'debate',
-    'documentary', 'gameplay', 'tutorial', 'review', 'unboxing'];
+    'documentary', 'gameplay', 'tutorial', 'unboxing'];
   return videos.filter(v => {
     const title = (v.title || '').toLowerCase();
     const hasBadKeyword = excludeKeywords.some(kw => title.includes(kw));
     const duration = v.duration?.seconds || 0;
-    // Keep between 1 min and 12 min
-    return !hasBadKeyword && duration >= 60 && duration <= 720;
+    // Keep between 30 sec and 30 min (covers short phonk tracks to long mixes)
+    return !hasBadKeyword && duration >= 30 && duration <= 1800;
   });
 }
 
@@ -68,23 +68,30 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString(), version: '1.0.0' });
 });
 
-// ── Search ──
-// GET /api/search?q=shape+of+you&limit=20
+// ── Search with Pagination ──
+// GET /api/search?q=shape+of+you&page=1&limit=30
 app.get('/api/search', async (req, res) => {
   const query = req.query.q;
-  const limit = Math.min(parseInt(req.query.limit) || 20, 50);
+  const page = Math.max(parseInt(req.query.page) || 1, 1);
+  const limit = Math.min(parseInt(req.query.limit) || 30, 50);
 
   if (!query || query.trim().length < 2) {
     return res.status(400).json({ error: 'Query too short. Minimum 2 characters.' });
   }
 
   try {
-    const result = await ytSearch({ query: query.trim() + ' music', pageStart: 1 });
-    const videos = result.videos || [];
-    const filtered = filterMusicResults(videos).slice(0, limit);
+    const cleanQ = query.trim();
+    const searchQuery = cleanQ.toLowerCase().includes('song') || cleanQ.toLowerCase().includes('music')
+      ? cleanQ
+      : `${cleanQ} music`;
 
-    const songs = filtered.map(mapVideoToSong);
-    res.json({ results: songs, total: songs.length, query });
+    const result = await ytSearch({ query: searchQuery, pageStart: page, pageEnd: page + 1 });
+    const videos = result.videos || [];
+    const filtered = filterMusicResults(videos);
+    const chosenVideos = (filtered.length >= 8 ? filtered : videos).slice(0, limit);
+
+    const songs = chosenVideos.map(mapVideoToSong);
+    res.json({ results: songs, total: songs.length, query, page });
   } catch (err) {
     console.error('Search error:', err.message);
     res.status(500).json({ error: 'Search failed. Try again.' });
