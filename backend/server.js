@@ -96,54 +96,60 @@ app.get('/api/search', async (req, res) => {
     const wantsKaraoke = cleanQ.toLowerCase().includes('karaoke');
     const wantsInstrumental = cleanQ.toLowerCase().includes('instrumental');
 
-    // For page > 1, use smart query variants so YouTube returns fresh, non-duplicate tracks!
-    const searchVariants = [
-      cleanQ,
-      `${cleanQ} songs`,
-      `${cleanQ} hit songs`,
-      `${cleanQ} official audio`,
-      `${cleanQ} similar tracks`,
-      `${cleanQ} popular`,
+    // Exclude compilation/mashup keywords
+    const excludeKeywords = [
+      'podcast', 'interview', 'lecture', 'news', 'gameplay',
+      'mashup', 'jukebox', '100 songs', 'top 50', 'top 100', 'top 20', 'top 30', 'top 40',
+      'full album', 'compilation', 'non stop', 'non-stop', 'dj mix', 'megamix', 'hour loop',
+      'playlist', 'all songs', 'audio jukebox', 'greatest hits', 'most streamed', 'songs that own'
     ];
-    const baseQuery = searchVariants[(page - 1) % searchVariants.length];
-    const searchQuery = baseQuery.toLowerCase().includes('song') || baseQuery.toLowerCase().includes('music')
-      ? baseQuery
-      : `${baseQuery} music`;
 
-    const result = await ytSearch({ query: searchQuery });
-    let candidateVideos = [...(result.videos || [])];
+    const cleanSubject = cleanQ.replace(/hit songs|hits|best songs|all songs|top songs|jukebox|mix|songs|song|audio/gi, '').trim() || cleanQ;
+    const lowerQ = cleanQ.toLowerCase();
 
-    // If query returned few short tracks (like 'phonk' where YouTube returns mostly 1-hour mixes),
-    // automatically search high-density track variants in parallel to ensure a full list!
-    let initialFiltered = filterMusicResults(candidateVideos, { maxDuration, minDuration: 30 });
-    if (initialFiltered.length < 12) {
-      const extraQueries = [];
-      const lowerQ = cleanQ.toLowerCase();
-      if (lowerQ.includes('phonk') || lowerQ.includes('funk')) {
-        extraQueries.push('brazilian phonk slowed', 'montagem phonk', 'phonk viral audio', 'kordhell phonk');
+    // Query variants tailored to return fresh individual single tracks
+    const extraQueries = [];
+    if (lowerQ.includes('phonk') || lowerQ.includes('funk')) {
+      extraQueries.push(cleanQ, 'brazilian phonk slowed', 'montagem phonk', 'phonk viral audio', 'kordhell phonk');
+    } else {
+      if (page === 1) {
+        extraQueries.push(
+          cleanQ,
+          `${cleanSubject} official song`,
+          `${cleanSubject} lyrical song`,
+          `${cleanSubject} track audio`
+        );
       } else {
-        extraQueries.push(`${cleanQ} official audio`, `${cleanQ} hit songs`);
-      }
-      const extraResults = await Promise.all(extraQueries.map(q => ytSearch({ query: q }).catch(() => ({ videos: [] }))));
-      for (const r of extraResults) {
-        if (r && r.videos) candidateVideos.push(...r.videos);
+        extraQueries.push(
+          `${cleanSubject} song official`,
+          `${cleanSubject} audio video`,
+          `${cleanSubject} popular track`,
+          `${cleanSubject} new song`
+        );
       }
     }
 
-    // Deduplicate and filter out karaoke/instrumental junk unless user explicitly searched for it
+    const allResults = await Promise.all(extraQueries.map(q => ytSearch({ query: q }).catch(() => ({ videos: [] }))));
+    let candidateVideos = [];
+    allResults.forEach(r => {
+      if (r && r.videos) candidateVideos.push(...r.videos);
+    });
+
+    // Deduplicate and filter out non-music and compilation junk
     const seenIds = new Set();
     const chosenVideos = [];
     for (const v of candidateVideos) {
-      if (seenIds.has(v.videoId)) continue;
+      if (!v || !v.videoId || seenIds.has(v.videoId)) continue;
       seenIds.add(v.videoId);
 
       const titleLower = (v.title || '').toLowerCase();
+      if (!allowLong && excludeKeywords.some(kw => titleLower.includes(kw))) continue;
       if (!wantsKaraoke && (titleLower.includes('karaoke') || titleLower.includes('scrolling lyrics'))) continue;
       if (!wantsInstrumental && (titleLower.includes('instrumental') || titleLower.includes('without music') || titleLower.includes('backing track'))) continue;
       if (titleLower.includes('whatsapp status') || titleLower.includes('8k status') || titleLower.includes('status video')) continue;
 
       const dur = v.duration?.seconds || 0;
-      if (dur < 30 || dur > maxDuration) continue;
+      if (dur < 30 || dur > (allowLong ? 10800 : 360)) continue;
 
       chosenVideos.push(v);
       if (chosenVideos.length >= limit) break;
