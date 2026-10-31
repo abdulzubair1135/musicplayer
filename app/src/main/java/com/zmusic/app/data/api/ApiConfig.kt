@@ -18,9 +18,23 @@ object ApiConfig {
     val BASE_URL: String
         get() = activeUrl
 
-    const val CONNECT_TIMEOUT_SECONDS = 15L
-    const val READ_TIMEOUT_SECONDS    = 30L
-    const val WRITE_TIMEOUT_SECONDS   = 15L
+    const val CONNECT_TIMEOUT_SECONDS = 45L
+    const val READ_TIMEOUT_SECONDS    = 60L
+    const val WRITE_TIMEOUT_SECONDS   = 30L
+
+    fun triggerEagerWakeup() {
+        val client = OkHttpClient.Builder()
+            .connectTimeout(50, TimeUnit.SECONDS)
+            .readTimeout(50, TimeUnit.SECONDS)
+            .build()
+        val req = Request.Builder().url("${RENDER_URL}api/health").build()
+        client.newCall(req).enqueue(object : okhttp3.Callback {
+            override fun onFailure(call: okhttp3.Call, e: java.io.IOException) {}
+            override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) {
+                response.close()
+            }
+        })
+    }
 
     suspend fun autoDetectFastestServer() = withContext(Dispatchers.IO) {
         val testClient = OkHttpClient.Builder()

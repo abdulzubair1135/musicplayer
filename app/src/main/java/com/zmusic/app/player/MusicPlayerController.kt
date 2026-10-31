@@ -198,6 +198,57 @@ class MusicPlayerController private constructor(private val context: Context) {
         AudioCacheManager.preCacheNextSongs(context, sanitizedSongs, actualIndex)
     }
 
+    fun updateQueuePreservingCurrent(newSongs: List<Song>) {
+        val controller = mediaController ?: return
+        val current = _currentSong.value ?: return
+        if (newSongs.isEmpty()) return
+
+        val currentIndexInNew = newSongs.indexOfFirst { it.id == current.id || (!it.videoId.isNullOrBlank() && it.videoId == current.videoId) }
+        val reordered = if (currentIndexInNew >= 0) {
+            newSongs
+        } else {
+            listOf(current) + newSongs
+        }
+
+        _currentQueue.value = reordered
+        reordered.forEach { songMap[it.id.toString()] = it }
+
+        val currentPlayingIndex = reordered.indexOfFirst { it.id == current.id || (!it.videoId.isNullOrBlank() && it.videoId == current.videoId) }.coerceAtLeast(0)
+
+        val mediaItems = reordered.map { song ->
+            val metadata = MediaMetadata.Builder()
+                .setTitle(song.title)
+                .setArtist(song.artist)
+                .setAlbumTitle(song.album)
+                .setArtworkUri(song.artworkUri?.let { Uri.parse(it) })
+                .build()
+
+            val playbackUri = if (song.sourceType == com.zmusic.app.data.model.SourceType.ONLINE || !song.videoId.isNullOrBlank()) {
+                if (!song.videoId.isNullOrBlank()) {
+                    Uri.parse(com.zmusic.app.data.api.ZMusicApiService.streamUrl(song.videoId!!))
+                } else {
+                    Uri.parse(song.streamUri ?: song.contentUri)
+                }
+            } else {
+                Uri.parse(song.contentUri)
+            }
+
+            MediaItem.Builder()
+                .setMediaId(song.id.toString())
+                .setUri(playbackUri)
+                .setMediaMetadata(metadata)
+                .build()
+        }
+
+        val currentPosition = controller.currentPosition
+        val isPlaying = controller.isPlaying
+        controller.setMediaItems(mediaItems, currentPlayingIndex, currentPosition)
+        if (isPlaying) {
+            controller.play()
+        }
+        AudioCacheManager.preCacheNextSongs(context, reordered, currentPlayingIndex)
+    }
+
     fun togglePlayPause() {
         val controller = mediaController ?: return
         if (controller.isPlaying) {

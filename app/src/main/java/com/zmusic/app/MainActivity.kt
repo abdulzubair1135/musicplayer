@@ -136,11 +136,14 @@ class MainActivity : ComponentActivity() {
         var onlineDiscover by remember { mutableStateOf<List<Song>>(emptyList()) }
         var onlineTrending by remember { mutableStateOf<List<Song>>(emptyList()) }
 
-        LaunchedEffect(isNetworkAvailable) {
+        val appSettings = remember { com.zmusic.app.data.settings.AppSettings.getInstance(this@MainActivity) }
+        val allowLongTracks by appSettings.allowLongTracks.collectAsState(initial = false)
+
+        LaunchedEffect(isNetworkAvailable, allowLongTracks) {
             if (isNetworkAvailable) {
                 try {
-                    onlineDiscover = repository.getOnlineDiscover()
-                    onlineTrending = repository.getOnlineTrending()
+                    onlineDiscover = repository.getOnlineDiscover(allowLong = allowLongTracks)
+                    onlineTrending = repository.getOnlineTrending(allowLong = allowLongTracks)
                 } catch (e: Exception) {
                     onlineDiscover = emptyList()
                     onlineTrending = emptyList()
@@ -211,18 +214,56 @@ class MainActivity : ComponentActivity() {
         )
 
         val playSongAction: (Song, List<Song>) -> Unit = { song, list ->
-            playerController.playQueue(list, list.indexOf(song).coerceAtLeast(0))
+            val isOnline = song.sourceType == com.zmusic.app.data.model.SourceType.ONLINE || !song.videoId.isNullOrBlank()
+
+            // Filter out duplicate versions (e.g. karaoke, remixes, bonus tracks) of this seed song from the list
+            val cleanTitlePrefix = song.title.lowercase().replace(Regex("""\(.*?\)|\[.*?\]"""), "").trim().take(7)
+            val filteredList = if (isOnline && cleanTitlePrefix.length >= 3) {
+                list.filter { item ->
+                    item.id == song.id || !item.title.lowercase().replace(Regex("""\(.*?\)|\[.*?\]"""), "").trim().startsWith(cleanTitlePrefix)
+                }
+            } else {
+                list
+            }
+
+            val targetQueue = if (filteredList.any { it.id == song.id }) filteredList else listOf(song) + filteredList
+            val playIndex = targetQueue.indexOfFirst { it.id == song.id }.coerceAtLeast(0)
+            playerController.playQueue(targetQueue, playIndex)
+
             scope.launch {
                 repository.recordPlayHistory(song)
+            }
+
+            // AUTO-RECOMMENDATION ALGORITHM:
+            // When playing an online song, if queue has fewer than 6 different tracks (e.g. from search),
+            // automatically fetch 20+ similar mood/genre songs and append them so next songs always match the vibe!
+            if (isOnline && isNetworkAvailable && targetQueue.size < 6) {
+                scope.launch {
+                    try {
+                        val radioSongs = repository.getSongRadioQueue(song, isOnlineAvailable = isNetworkAvailable, allowLong = allowLongTracks)
+                        if (radioSongs.isNotEmpty()) {
+                            val existingIds = targetQueue.map { it.videoId ?: it.id.toString() }.toSet()
+                            val uniqueRadio = radioSongs.filter { (it.videoId ?: it.id.toString()) !in existingIds }
+                            val fullQueue = targetQueue + uniqueRadio
+                            playerController.updateQueuePreservingCurrent(fullQueue)
+                        }
+                    } catch (e: Exception) {
+                        android.util.Log.e("MainActivity", "Auto radio queue enhancement error", e)
+                    }
+                }
             }
         }
 
         val startRadioAction: (Song) -> Unit = { seedSong ->
+            // Start seed song immediately with zero wait!
+            playerController.playQueue(listOf(seedSong), 0)
             scope.launch {
-                val radioList = repository.getSongRadioQueue(seedSong, isNetworkAvailable)
+                repository.recordPlayHistory(seedSong)
+                val radioList = repository.getSongRadioQueue(seedSong, isOnlineAvailable = isNetworkAvailable, allowLong = allowLongTracks)
                 if (radioList.isNotEmpty()) {
-                    playerController.playQueue(radioList, 0)
-                    Toast.makeText(this@MainActivity, "Song Radio started for ${seedSong.title}", Toast.LENGTH_SHORT).show()
+                    val fresh = radioList.filter { it.videoId != seedSong.videoId && it.id != seedSong.id }
+                    playerController.updateQueuePreservingCurrent(listOf(seedSong) + fresh)
+                    Toast.makeText(this@MainActivity, "Auto-queue loaded with similar songs!", Toast.LENGTH_SHORT).show()
                 }
             }
         }
