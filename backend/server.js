@@ -53,8 +53,9 @@ function filterMusicResults(videos, options = {}) {
   const excludeKeywords = [
     'podcast', 'interview', 'lecture', 'news', 'debate',
     'documentary', 'gameplay', 'tutorial', 'unboxing',
-    'mashup', 'jukebox', '100 songs', 'top 50', 'top 100', 'top 20', 'top 30',
-    'full album', 'compilation', 'non stop', 'non-stop', 'dj mix', 'megamix', 'hour loop'
+    'mashup', 'jukebox', '100 songs', 'top 50', 'top 100', 'top 20', 'top 30', 'top 40',
+    'full album', 'compilation', 'non stop', 'non-stop', 'dj mix', 'megamix', 'hour loop',
+    'playlist', 'all songs', 'audio jukebox', 'jukebox'
   ];
   const maxDuration = options.maxDuration || 600; // max 10 mins (default)
   const minDuration = options.minDuration || 45;  // min 45 secs
@@ -93,8 +94,13 @@ app.get('/api/search', async (req, res) => {
 
     const result = await ytSearch({ query: searchQuery, pageStart: page, pageEnd: page + 1 });
     const videos = result.videos || [];
-    const filtered = filterMusicResults(videos);
-    const chosenVideos = (filtered.length >= 8 ? filtered : videos).slice(0, limit);
+    // Strictly filter out compilation playlists and multi-hour videos
+    let filtered = filterMusicResults(videos);
+    if (filtered.length === 0) {
+      // Fallback: only keep true individual tracks <= 10 minutes (600s)
+      filtered = videos.filter(v => (v.duration?.seconds || 0) <= 600 && (v.duration?.seconds || 0) >= 30);
+    }
+    const chosenVideos = filtered.slice(0, limit);
 
     const songs = chosenVideos.map(mapVideoToSong);
     res.json({ results: songs, total: songs.length, query, page });
