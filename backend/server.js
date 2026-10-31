@@ -7,7 +7,7 @@ const rateLimit = require('express-rate-limit');
 const ytSearch = require('yt-search');
 const { Ytdl, chooseFormat, Client } = require('@distube/ytdl-core');
 const ytdl = new Ytdl({
-  clients: [Client.WebEmbedded, Client.Tv, Client.Mweb, Client.VisionOS]
+  clients: [Client.VisionOS, Client.Tv, Client.WebEmbedded]
 });
 
 const app = express();
@@ -281,7 +281,7 @@ app.get('/api/stream/:videoId', async (req, res) => {
       format = cached.format;
     } else {
       const infoPromise = ytdl.getInfo(videoId);
-      const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('YTDL stream fetch timeout')), 12000));
+      const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('YTDL stream fetch timeout')), 20000));
       const info = await Promise.race([infoPromise, timeoutPromise]);
 
       const audioFormats = info.formats.filter(f => f.hasAudio && !f.hasVideo && f.url);
