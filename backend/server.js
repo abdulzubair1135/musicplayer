@@ -149,6 +149,44 @@ app.get('/api/stream/:videoId', async (req, res) => {
   }
 });
 
+// ── Direct Download Endpoint ──
+// GET /api/download/:videoId
+app.get('/api/download/:videoId', async (req, res) => {
+  const { videoId } = req.params;
+
+  if (!videoId || !/^[a-zA-Z0-9_-]{11}$/.test(videoId)) {
+    return res.status(400).json({ error: 'Invalid video ID.' });
+  }
+
+  try {
+    const url = `https://www.youtube.com/watch?v=${videoId}`;
+    const info = await ytdl.getInfo(url);
+    const format = ytdl.chooseFormat(info.formats, {
+      quality: 'highestaudio',
+      filter: 'audioonly',
+    });
+
+    if (!format) {
+      return res.status(404).json({ error: 'No audio format available.' });
+    }
+
+    const title = (info.videoDetails?.title || videoId).replace(/[^a-zA-Z0-9_-]/g, '_');
+    res.setHeader('Content-Disposition', `attachment; filename="${title}.m4a"`);
+    res.setHeader('Content-Type', 'audio/mp4');
+
+    if (format.contentLength) {
+      res.setHeader('Content-Length', format.contentLength);
+    }
+
+    ytdl(url, { format }).pipe(res);
+  } catch (err) {
+    console.error('Download error:', err.message);
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Download failed.' });
+    }
+  }
+});
+
 // ── Get Song Info (for download URL) ──
 // GET /api/info/:videoId
 app.get('/api/info/:videoId', async (req, res) => {
