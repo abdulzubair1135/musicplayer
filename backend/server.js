@@ -5,8 +5,10 @@ const compression = require('compression');
 const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
 const ytSearch = require('yt-search');
-const { Ytdl, chooseFormat } = require('@distube/ytdl-core');
-const ytdl = new Ytdl();
+const { Ytdl, chooseFormat, Client } = require('@distube/ytdl-core');
+const ytdl = new Ytdl({
+  clients: [Client.WebEmbedded, Client.Tv, Client.Mweb, Client.VisionOS]
+});
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -75,7 +77,13 @@ function filterMusicResults(videos, options = {}) {
 
 // Health check
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString(), version: '1.0.0' });
+  res.json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    version: '1.0.0',
+    nodeVersion: process.version,
+    platform: process.platform
+  });
 });
 
 // In-memory cache for ultra-fast searches and zero CPU waste on Render
@@ -251,6 +259,9 @@ app.get('/api/lyrics', async (req, res) => {
 const https = require('https');
 const http = require('http');
 
+// In-memory cache for audio streaming URLs (15 mins TTL)
+const streamUrlCache = new Map();
+
 // ── Stream Audio ──
 // GET /api/stream/:videoId
 app.get('/api/stream/:videoId', async (req, res) => {
@@ -261,15 +272,28 @@ app.get('/api/stream/:videoId', async (req, res) => {
   }
 
   try {
-    const info = await ytdl.getInfo(videoId);
-    const audioFormats = info.formats.filter(f => f.hasAudio && !f.hasVideo && f.url);
-    const format = chooseFormat(audioFormats, { quality: 'highestaudio' }) || audioFormats[0];
+    let audioUrl = null;
+    let format = null;
 
-    if (!format || !format.url) {
-      return res.status(404).json({ error: 'No audio format available.' });
+    const cached = streamUrlCache.get(videoId);
+    if (cached && (Date.now() - cached.time < 15 * 60 * 1000)) {
+      audioUrl = cached.audioUrl;
+      format = cached.format;
+    } else {
+      const infoPromise = ytdl.getInfo(videoId);
+      const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('YTDL stream fetch timeout')), 12000));
+      const info = await Promise.race([infoPromise, timeoutPromise]);
+
+      const audioFormats = info.formats.filter(f => f.hasAudio && !f.hasVideo && f.url);
+      format = chooseFormat(audioFormats, { quality: 'highestaudio' }) || audioFormats[0];
+
+      if (!format || !format.url) {
+        return res.status(404).json({ error: 'No audio format available.' });
+      }
+
+      audioUrl = format.url;
+      streamUrlCache.set(videoId, { audioUrl, format, time: Date.now() });
     }
-
-    const audioUrl = format.url;
     const client = audioUrl.startsWith('https') ? https : http;
 
     const proxyHeaders = {
@@ -593,4 +617,14 @@ app.listen(PORT, () => {
   console.log(`   Health: http://localhost:${PORT}/api/health`);
   console.log(`   Search: http://localhost:${PORT}/api/search?q=shape+of+you`);
   console.log(`   Stream: http://localhost:${PORT}/api/stream/:videoId`);
+
+  // Render 24/7 Keep-Alive: Ping health endpoint every 8 minutes
+  const pingUrl = process.env.RENDER_EXTERNAL_URL || 'https://musicplayer-blyl.onrender.com';
+  setInterval(() => {
+    https.get(`${pingUrl}/api/health`, (res) => {
+      console.log(`[KeepAlive] Pinged ${pingUrl}/api/health - Status: ${res.statusCode}`);
+    }).on('error', (err) => {
+      console.warn('[KeepAlive] Warning:', err.message);
+    });
+  }, 8 * 60 * 1000);
 });
