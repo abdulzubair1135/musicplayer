@@ -48,16 +48,22 @@ function mapVideoToSong(v) {
   };
 }
 
-// Filter out likely non-music results
-function filterMusicResults(videos) {
-  const excludeKeywords = ['podcast', 'interview', 'lecture', 'news', 'debate',
-    'documentary', 'gameplay', 'tutorial', 'unboxing'];
+// Filter out non-music and lengthy compilation/mashup videos
+function filterMusicResults(videos, options = {}) {
+  const excludeKeywords = [
+    'podcast', 'interview', 'lecture', 'news', 'debate',
+    'documentary', 'gameplay', 'tutorial', 'unboxing',
+    'mashup', 'jukebox', '100 songs', 'top 50', 'top 100', 'top 20', 'top 30',
+    'full album', 'compilation', 'non stop', 'non-stop', 'dj mix', 'megamix', 'hour loop'
+  ];
+  const maxDuration = options.maxDuration || 600; // max 10 mins (default)
+  const minDuration = options.minDuration || 45;  // min 45 secs
+
   return videos.filter(v => {
     const title = (v.title || '').toLowerCase();
     const hasBadKeyword = excludeKeywords.some(kw => title.includes(kw));
     const duration = v.duration?.seconds || 0;
-    // Keep between 30 sec and 30 min (covers short phonk tracks to long mixes)
-    return !hasBadKeyword && duration >= 30 && duration <= 1800;
+    return !hasBadKeyword && duration >= minDuration && duration <= maxDuration;
   });
 }
 
@@ -336,11 +342,15 @@ app.get('/api/info/:videoId', async (req, res) => {
 // ── Trending ──
 // GET /api/trending?genre=pop
 app.get('/api/trending', async (req, res) => {
-  const genre = req.query.genre || 'top hits 2024';
+  const genre = req.query.genre;
+  const query = genre
+    ? `${genre} songs official video`
+    : 'trending songs 2024 official music video';
   try {
-    const result = await ytSearch({ query: `${genre} best songs 2024 music` });
+    const result = await ytSearch({ query });
     const videos = filterMusicResults(result.videos || []).slice(0, 15);
-    res.json({ results: videos.map(mapVideoToSong), genre });
+    const chosen = (videos.length >= 5 ? videos : (result.videos || [])).slice(0, 15);
+    res.json({ results: chosen.map(mapVideoToSong), genre: genre || 'trending' });
   } catch (err) {
     console.error('Trending error:', err.message);
     res.status(500).json({ error: 'Could not fetch trending.' });
@@ -350,22 +360,23 @@ app.get('/api/trending', async (req, res) => {
 // ── Discover by genre ──
 // GET /api/discover?genre=lofi
 const DISCOVER_GENRES = [
-  'lofi hip hop chill beats',
-  'top bollywood songs 2024',
-  'trending pop hits 2024',
-  'best indie music 2024',
-  'arabic pop music 2024',
+  'top bollywood hit songs official video',
+  'trending pop music official audio',
+  'punjabi hit songs official audio',
+  'english hit songs official audio',
+  'lofi chill beats official',
 ];
 
 app.get('/api/discover', async (req, res) => {
   const query = req.query.genre
-    ? `${req.query.genre} music popular 2024`
+    ? `${req.query.genre} hit songs official audio`
     : DISCOVER_GENRES[Math.floor(Math.random() * DISCOVER_GENRES.length)];
 
   try {
     const result = await ytSearch({ query });
-    const videos = filterMusicResults(result.videos || []).slice(0, 10);
-    res.json({ results: videos.map(mapVideoToSong) });
+    const videos = filterMusicResults(result.videos || []).slice(0, 12);
+    const chosen = (videos.length >= 5 ? videos : (result.videos || [])).slice(0, 12);
+    res.json({ results: chosen.map(mapVideoToSong) });
   } catch (err) {
     console.error('Discover error:', err.message);
     res.status(500).json({ error: 'Could not fetch discover.' });
