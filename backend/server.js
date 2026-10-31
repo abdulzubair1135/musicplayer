@@ -353,7 +353,7 @@ app.get('/api/stream/:videoId', async (req, res) => {
   } catch (err) {
     console.error('Stream error:', err.message);
     if (!res.headersSent) {
-      res.status(500).json({ error: 'Streaming failed. Video may be unavailable.' });
+      res.status(500).json({ error: 'Streaming failed. Video may be unavailable.', details: err.message });
     }
   }
 });
