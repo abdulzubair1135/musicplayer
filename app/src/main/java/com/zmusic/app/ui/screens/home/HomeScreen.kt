@@ -61,18 +61,18 @@ data class ArtistCardData(
 )
 
 val curatedPopularArtists = listOf(
-    ArtistCardData("Arijit Singh", "https://i.ytimg.com/vi/VAdGW7QDJiU/hqdefault.jpg", "Arijit Singh hit songs"),
-    ArtistCardData("Diljit Dosanjh", "https://i.ytimg.com/vi/cl0a3i2wFcc/hqdefault.jpg", "Diljit Dosanjh hit songs"),
-    ArtistCardData("The Weeknd", "https://i.ytimg.com/vi/4NRXx6U8ABQ/hqdefault.jpg", "The Weeknd top hits"),
-    ArtistCardData("Taylor Swift", "https://i.ytimg.com/vi/ic8j13piAhQ/hqdefault.jpg", "Taylor Swift songs"),
-    ArtistCardData("Ed Sheeran", "https://i.ytimg.com/vi/JGwWNGJdvx8/hqdefault.jpg", "Ed Sheeran hit songs"),
-    ArtistCardData("Billie Eilish", "https://i.ytimg.com/vi/d5gf9dXbPi0/hqdefault.jpg", "Billie Eilish songs"),
-    ArtistCardData("AP Dhillon", "https://i.ytimg.com/vi/VNs_cCtdbPc/hqdefault.jpg", "AP Dhillon hit songs"),
-    ArtistCardData("Shreya Ghoshal", "https://i.ytimg.com/vi/zRtPUIumXcY/hqdefault.jpg", "Shreya Ghoshal songs"),
-    ArtistCardData("Sidhu Moose Wala", "https://i.ytimg.com/vi/NvrIwnvTLHM/hqdefault.jpg", "Sidhu Moose Wala songs"),
-    ArtistCardData("Alan Walker", "https://i.ytimg.com/vi/60ItHLz5WEA/hqdefault.jpg", "Alan Walker songs"),
-    ArtistCardData("Atif Aslam", "https://i.ytimg.com/vi/SAcpESN_Fk4/hqdefault.jpg", "Atif Aslam hit songs"),
-    ArtistCardData("Justin Bieber", "https://i.ytimg.com/vi/tQ0yjYUFKAE/hqdefault.jpg", "Justin Bieber hit songs")
+    ArtistCardData("Arijit Singh", "https://i.ytimg.com/vi/VAdGW7QDJiU/hqdefault.jpg", "Arijit Singh"),
+    ArtistCardData("Diljit Dosanjh", "https://i.ytimg.com/vi/cl0a3i2wFcc/hqdefault.jpg", "Diljit Dosanjh"),
+    ArtistCardData("The Weeknd", "https://i.ytimg.com/vi/4NRXx6U8ABQ/hqdefault.jpg", "The Weeknd"),
+    ArtistCardData("Taylor Swift", "https://i.ytimg.com/vi/ic8j13piAhQ/hqdefault.jpg", "Taylor Swift"),
+    ArtistCardData("Ed Sheeran", "https://i.ytimg.com/vi/JGwWNGJdvx8/hqdefault.jpg", "Ed Sheeran"),
+    ArtistCardData("Billie Eilish", "https://i.ytimg.com/vi/d5gf9dXbPi0/hqdefault.jpg", "Billie Eilish"),
+    ArtistCardData("AP Dhillon", "https://i.ytimg.com/vi/VNs_cCtdbPc/hqdefault.jpg", "AP Dhillon"),
+    ArtistCardData("Shreya Ghoshal", "https://i.ytimg.com/vi/zRtPUIumXcY/hqdefault.jpg", "Shreya Ghoshal"),
+    ArtistCardData("Sidhu Moose Wala", "https://i.ytimg.com/vi/NvrIwnvTLHM/hqdefault.jpg", "Sidhu Moose Wala"),
+    ArtistCardData("Alan Walker", "https://i.ytimg.com/vi/60ItHLz5WEA/hqdefault.jpg", "Alan Walker"),
+    ArtistCardData("Atif Aslam", "https://i.ytimg.com/vi/SAcpESN_Fk4/hqdefault.jpg", "Atif Aslam"),
+    ArtistCardData("Justin Bieber", "https://i.ytimg.com/vi/tQ0yjYUFKAE/hqdefault.jpg", "Justin Bieber")
 )
 
 @Composable
