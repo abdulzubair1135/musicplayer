@@ -60,30 +60,37 @@ class YouTubeApiMusicProvider : MusicProvider {
         }
     }
 
-    override suspend fun getDiscoverSection(): List<Song> = withContext(Dispatchers.IO) {
-        runCatching { api.discover().body()?.results?.map { it.toSong() } ?: emptyList() }
+    override suspend fun getDiscoverSection(): List<Song> = getDiscoverSection(false)
+
+    suspend fun getDiscoverSection(allowLong: Boolean = false): List<Song> = withContext(Dispatchers.IO) {
+        runCatching { api.discover(allowLong = allowLong).body()?.results?.map { it.toSong() } ?: emptyList() }
             .getOrDefault(emptyList())
     }
 
-    override suspend fun getTrending(): List<Song> = withContext(Dispatchers.IO) {
-        runCatching { api.trending().body()?.results?.map { it.toSong() } ?: emptyList() }
+    override suspend fun getTrending(): List<Song> = getTrending(false)
+
+    suspend fun getTrending(allowLong: Boolean = false): List<Song> = withContext(Dispatchers.IO) {
+        runCatching { api.trending(allowLong = allowLong).body()?.results?.map { it.toSong() } ?: emptyList() }
             .getOrDefault(emptyList())
     }
 
-    override suspend fun getRadioForSong(seedSong: Song): List<Song> = withContext(Dispatchers.IO) {
+    override suspend fun getRadioForSong(seedSong: Song): List<Song> = getRadioForSong(seedSong, false)
+
+    suspend fun getRadioForSong(seedSong: Song, allowLong: Boolean = false): List<Song> = withContext(Dispatchers.IO) {
         runCatching {
             api.radio(
                 videoId = seedSong.videoId,
                 title   = seedSong.title,
                 artist  = seedSong.artist,
+                allowLong = allowLong
             ).body()?.results?.map { it.toSong() } ?: emptyList()
         }.getOrDefault(emptyList())
     }
 
-    /** Direct search returning raw list (used by SearchScreen) */
-    suspend fun searchDirect(query: String): List<Song> = withContext(Dispatchers.IO) {
+    /** Direct search returning raw list (used by SearchScreen) with pagination */
+    suspend fun searchDirect(query: String, page: Int = 1, allowLong: Boolean = false): List<Song> = withContext(Dispatchers.IO) {
         if (query.isBlank()) return@withContext emptyList()
-        runCatching { api.search(query).body()?.results?.map { it.toSong() } ?: emptyList() }
+        runCatching { api.search(query = query, page = page, allowLong = allowLong).body()?.results?.map { it.toSong() } ?: emptyList() }
             .getOrDefault(emptyList())
     }
 }

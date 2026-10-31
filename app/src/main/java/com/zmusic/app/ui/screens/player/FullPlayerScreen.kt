@@ -1,9 +1,12 @@
 package com.zmusic.app.ui.screens.player
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -12,12 +15,20 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.FormatQuote
+import androidx.compose.material.icons.filled.GraphicEq
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.QueueMusic
@@ -26,9 +37,12 @@ import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -40,6 +54,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -48,12 +63,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.media3.common.Player
+import com.zmusic.app.data.lyrics.LyricLine
+import com.zmusic.app.data.lyrics.LyricsManager
 import com.zmusic.app.data.model.Song
 import com.zmusic.app.ui.components.AudioArtwork
 import com.zmusic.app.ui.components.SongItem
@@ -78,6 +96,8 @@ fun FullPlayerScreen(
     isFavorite: Boolean,
     currentQueue: List<Song>,
     sleepTimerMillis: Long?,
+    playbackSpeed: Float = 1.0f,
+    onSetSpeedAndPitch: (Float, Float) -> Unit = { _, _ -> },
     onDismiss: () -> Unit,
     onPlayPauseToggle: () -> Unit,
     onSkipNext: () -> Unit,
@@ -92,8 +112,16 @@ fun FullPlayerScreen(
 ) {
     var showQueueSheet by remember { mutableStateOf(false) }
     var showSleepTimerDialog by remember { mutableStateOf(false) }
+    var showAudioFxSheet by remember { mutableStateOf(false) }
+    var showLyrics by remember { mutableStateOf(false) }
+    var lyricsLines by remember { mutableStateOf<List<LyricLine>>(emptyList()) }
     var isSeeking by remember { mutableStateOf(false) }
     var seekPosition by remember { mutableStateOf(0f) }
+
+    LaunchedEffect(song.id) {
+        lyricsLines = emptyList()
+        lyricsLines = LyricsManager.getLyrics(song.title, song.artist, duration)
+    }
 
     val currentPosition = if (isSeeking) seekPosition.toLong() else playbackPosition
 
@@ -126,37 +154,70 @@ fun FullPlayerScreen(
                 }
 
                 Text(
-                    text = "PLAYING FROM LIBRARY",
+                    text = if (song.sourceType == com.zmusic.app.data.model.SourceType.ONLINE || !song.videoId.isNullOrBlank()) "PLAYING FROM ONLINE" else "PLAYING FROM LIBRARY",
                     style = MaterialTheme.typography.labelMedium,
                     letterSpacing = 1.5.sp,
                     color = TextSecondary
                 )
 
-                IconButton(onClick = { showQueueSheet = true }) {
-                    Icon(
-                        imageVector = Icons.Default.QueueMusic,
-                        contentDescription = "Queue",
-                        tint = TextPrimary
-                    )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = { showLyrics = !showLyrics }) {
+                        Icon(
+                            imageVector = if (showLyrics) Icons.Default.Image else Icons.Default.FormatQuote,
+                            contentDescription = "Lyrics",
+                            tint = if (showLyrics) PrimaryPurple else TextSecondary
+                        )
+                    }
+                    IconButton(onClick = { showQueueSheet = true }) {
+                        Icon(
+                            imageVector = Icons.Default.QueueMusic,
+                            contentDescription = "Queue",
+                            tint = TextPrimary
+                        )
+                    }
                 }
             }
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Large Album Artwork
+            // Large Album Artwork or Synced Lyrics with Swipe Gestures
+            var totalDragX by remember { mutableStateOf(0f) }
             Box(
                 modifier = Modifier
-                    .fillMaxWidth(0.85f)
+                    .fillMaxWidth(0.88f)
                     .aspectRatio(1f)
                     .clip(RoundedCornerShape(24.dp))
-                    .background(SurfaceDark),
+                    .background(SurfaceDark)
+                    .pointerInput(song.id) {
+                        detectHorizontalDragGestures(
+                            onDragEnd = {
+                                if (totalDragX < -70f) {
+                                    onSkipNext()
+                                } else if (totalDragX > 70f) {
+                                    onSkipPrevious()
+                                }
+                                totalDragX = 0f
+                            },
+                            onHorizontalDrag = { _, dragAmount ->
+                                totalDragX += dragAmount
+                            }
+                        )
+                    },
                 contentAlignment = Alignment.Center
             ) {
-                AudioArtwork(
-                    artworkUri = song.artworkUri,
-                    size = 320.dp,
-                    cornerRadius = 24.dp
-                )
+                if (showLyrics) {
+                    SyncedLyricsView(
+                        lyrics = lyricsLines,
+                        currentPositionMs = currentPosition,
+                        onSeekTo = onSeekTo
+                    )
+                } else {
+                    AudioArtwork(
+                        artworkUri = song.artworkUri,
+                        size = 320.dp,
+                        cornerRadius = 24.dp
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(24.dp))
@@ -307,12 +368,35 @@ fun FullPlayerScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Bottom Extra Row: Sleep Timer indicator & button
+            // Bottom Extra Row: Audio FX & Sleep Timer indicator & button
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Center,
+                horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                // Audio FX / Speed / Slowed+Reverb Button
+                TextButton(onClick = { showAudioFxSheet = true }) {
+                    Icon(
+                        imageVector = Icons.Default.GraphicEq,
+                        contentDescription = "Audio FX",
+                        tint = if (playbackSpeed != 1.0f) PrimaryPurple else TextSecondary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.size(6.dp))
+                    Text(
+                        text = when {
+                            playbackSpeed == 0.85f -> "Slowed 🌙"
+                            playbackSpeed == 1.15f -> "Nightcore ⚡"
+                            playbackSpeed != 1.0f -> "${playbackSpeed}x"
+                            else -> "Audio FX"
+                        },
+                        color = if (playbackSpeed != 1.0f) PrimaryPurple else TextSecondary,
+                        fontSize = 13.sp,
+                        fontWeight = if (playbackSpeed != 1.0f) FontWeight.Bold else FontWeight.Normal
+                    )
+                }
+
+                // Sleep Timer Button
                 TextButton(onClick = { showSleepTimerDialog = true }) {
                     Icon(
                         imageVector = Icons.Default.Timer,
@@ -398,6 +482,147 @@ fun FullPlayerScreen(
                     }
                 },
                 containerColor = SurfaceDark
+            )
+        }
+
+        // Audio FX & Speed Modal Sheet
+        if (showAudioFxSheet) {
+            ModalBottomSheet(
+                onDismissRequest = { showAudioFxSheet = false },
+                sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+                containerColor = SurfaceDark
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Text(
+                        text = "Audio FX & Playback Speed",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = TextPrimary
+                    )
+
+                    Text(
+                        text = "Vibe Presets",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = TextSecondary
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        FilterChip(
+                            selected = playbackSpeed == 1.0f,
+                            onClick = { onSetSpeedAndPitch(1.0f, 1.0f) },
+                            label = { Text("Normal 1.0x") },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = PrimaryPurple,
+                                selectedLabelColor = Color.White
+                            )
+                        )
+                        FilterChip(
+                            selected = playbackSpeed == 0.85f,
+                            onClick = { onSetSpeedAndPitch(0.85f, 0.85f) },
+                            label = { Text("Slowed 🌙") },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = PrimaryPurple,
+                                selectedLabelColor = Color.White
+                            )
+                        )
+                        FilterChip(
+                            selected = playbackSpeed == 1.15f,
+                            onClick = { onSetSpeedAndPitch(1.15f, 1.15f) },
+                            label = { Text("Nightcore ⚡") },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = PrimaryPurple,
+                                selectedLabelColor = Color.White
+                            )
+                        )
+                    }
+
+                    Text(
+                        text = "Custom Tempo Speed",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = TextSecondary
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        listOf(0.75f, 0.9f, 1.0f, 1.25f, 1.5f).forEach { speed ->
+                            FilterChip(
+                                selected = playbackSpeed == speed,
+                                onClick = { onSetSpeedAndPitch(speed, 1.0f) },
+                                label = { Text("${speed}x") },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = PrimaryPurple,
+                                    selectedLabelColor = Color.White
+                                )
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.height(16.dp))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SyncedLyricsView(
+    lyrics: List<LyricLine>,
+    currentPositionMs: Long,
+    onSeekTo: (Long) -> Unit
+) {
+    if (lyrics.isEmpty()) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Icon(Icons.Default.MusicNote, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(40.dp))
+                Spacer(Modifier.height(8.dp))
+                Text("Searching live lyrics…", color = TextSecondary, fontSize = 14.sp)
+            }
+        }
+        return
+    }
+
+    val activeIndex = lyrics.indexOfLast { it.timestampMs <= currentPositionMs }.coerceAtLeast(0)
+    val lyricsListState = rememberLazyListState()
+
+    LaunchedEffect(activeIndex) {
+        if (activeIndex in lyrics.indices) {
+            lyricsListState.animateScrollToItem((activeIndex - 1).coerceAtLeast(0))
+        }
+    }
+
+    LazyColumn(
+        state = lyricsListState,
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 16.dp),
+        contentPadding = PaddingValues(vertical = 100.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        itemsIndexed(lyrics) { index, line ->
+            val isActive = index == activeIndex
+            Text(
+                text = line.text,
+                fontSize = if (isActive) 20.sp else 15.sp,
+                fontWeight = if (isActive) FontWeight.Bold else FontWeight.Medium,
+                color = if (isActive) Color.White else TextSecondary.copy(alpha = 0.4f),
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp)
+                    .clickable { onSeekTo(line.timestampMs) }
             )
         }
     }

@@ -6,6 +6,7 @@ import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -155,6 +156,7 @@ class MainActivity : ComponentActivity() {
         val repeatMode by playerController.repeatMode.collectAsState()
         val sleepTimerMillis by playerController.sleepTimerMillis.collectAsState()
         val currentQueue by playerController.currentQueue.collectAsState()
+        val playbackSpeed by playerController.playbackSpeed.collectAsState()
 
         val isCurrentFavorite by remember(currentSong, favorites) {
             mutableStateOf(favorites.any { it.id == currentSong?.id })
@@ -162,9 +164,44 @@ class MainActivity : ComponentActivity() {
 
         val navController = rememberNavController()
         var isFullPlayerExpanded by remember { mutableStateOf(false) }
+        var searchInitialQuery by remember { mutableStateOf("") }
 
         val navBackStackEntry by navController.currentBackStackEntryAsState()
         val currentRoute = navBackStackEntry?.destination?.route
+
+        // ── Smart Back Button Handling ──────────────────────────────────────────
+        // 1. If full player is expanded, back collapses it
+        BackHandler(enabled = isFullPlayerExpanded) {
+            isFullPlayerExpanded = false
+        }
+
+        // 2. If on another screen or sub-screen, back returns to Home
+        val isNotOnHome = currentRoute != null && currentRoute != Screen.Home.route
+        BackHandler(enabled = !isFullPlayerExpanded && isNotOnHome) {
+            if (currentRoute == Screen.PlaylistDetail.route) {
+                navController.popBackStack()
+            } else {
+                navController.navigate(Screen.Home.route) {
+                    popUpTo(Screen.Home.route) { inclusive = false }
+                    launchSingleTop = true
+                }
+            }
+        }
+
+        // 3. If on Home, double-tap back to exit (prevents sudden app closing!)
+        var backPressedOnce by remember { mutableStateOf(false) }
+        BackHandler(enabled = !isFullPlayerExpanded && !isNotOnHome) {
+            if (backPressedOnce) {
+                finish()
+            } else {
+                backPressedOnce = true
+                Toast.makeText(this@MainActivity, "Press back again to exit", Toast.LENGTH_SHORT).show()
+                scope.launch {
+                    kotlinx.coroutines.delay(2000)
+                    backPressedOnce = false
+                }
+            }
+        }
 
         val bottomBarScreens = listOf(
             Screen.Home,
@@ -229,6 +266,9 @@ class MainActivity : ComponentActivity() {
                                 label = { Text(text = screen.title) },
                                 selected = selected,
                                 onClick = {
+                                    if (screen == Screen.Search && currentRoute != Screen.Search.route) {
+                                        searchInitialQuery = ""
+                                    }
                                     navController.navigate(screen.route) {
                                         popUpTo(navController.graph.findStartDestination().id) {
                                             saveState = true
@@ -262,14 +302,30 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize()
                 ) {
                     composable(Screen.Home.route) {
+                        val onlineRecentlyPlayed = remember(recentlyPlayed) {
+                            recentlyPlayed.filter {
+                                (it.sourceType == com.zmusic.app.data.model.SourceType.ONLINE || !it.videoId.isNullOrBlank())
+                                && (it.duration <= 0 || it.duration <= 600_000)
+                                && !it.title.contains("100 songs", ignoreCase = true)
+                                && !it.title.contains("top 50", ignoreCase = true)
+                                && !it.title.contains("top 100", ignoreCase = true)
+                                && !it.title.contains("mashup", ignoreCase = true)
+                                && !it.title.contains("jukebox", ignoreCase = true)
+                            }
+                        }
                         HomeScreen(
-                            recentlyPlayed = recentlyPlayed,
+                            recentlyPlayed = onlineRecentlyPlayed,
                             onlineDiscover = onlineDiscover,
                             onlineTrending = onlineTrending,
                             artists = artists,
                             isNetworkAvailable = isNetworkAvailable,
                             onPlaySong = playSongAction,
-                            onNavigateToArtist = { }
+                            onNavigateToArtist = { artistQuery ->
+                                searchInitialQuery = artistQuery
+                                navController.navigate(Screen.Search.route) {
+                                    launchSingleTop = true
+                                }
+                            }
                         )
                     }
 
@@ -279,6 +335,7 @@ class MainActivity : ComponentActivity() {
                             onlineSongs = emptyList(),
                             isNetworkAvailable = isNetworkAvailable,
                             currentSong = currentSong,
+                            initialQuery = searchInitialQuery,
                             onPlaySong = playSongAction,
                             onStartRadio = startRadioAction,
                             onToggleFavorite = { song -> scope.launch { repository.toggleFavorite(song) } }
@@ -343,6 +400,10 @@ class MainActivity : ComponentActivity() {
                         isFavorite = isCurrentFavorite,
                         currentQueue = currentQueue,
                         sleepTimerMillis = sleepTimerMillis,
+                        playbackSpeed = playbackSpeed,
+                        onSetSpeedAndPitch = { speed, pitch ->
+                            playerController.setPlaybackSpeedAndPitch(speed, pitch)
+                        },
                         onDismiss = { isFullPlayerExpanded = false },
                         onPlayPauseToggle = { playerController.togglePlayPause() },
                         onSkipNext = { playerController.skipToNext() },

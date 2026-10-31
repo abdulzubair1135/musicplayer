@@ -49,6 +49,7 @@ fun SearchScreen(
     onlineSongs: List<Song>,
     isNetworkAvailable: Boolean,
     currentSong: Song?,
+    initialQuery: String = "",
     onPlaySong: (Song, List<Song>) -> Unit,
     onStartRadio: (Song) -> Unit,
     onToggleFavorite: (Song) -> Unit,
@@ -57,8 +58,10 @@ fun SearchScreen(
     val repository     = ZMusicApp.instance.repository
     val scope          = rememberCoroutineScope()
     val keyboard       = LocalSoftwareKeyboardController.current
+    val focusManager   = androidx.compose.ui.platform.LocalFocusManager.current
+    val allowLongTracks by com.zmusic.app.data.settings.AppSettings.getInstance(context).allowLongTracks.collectAsState()
 
-    var query          by remember { mutableStateOf("") }
+    var query          by remember(initialQuery) { mutableStateOf(initialQuery) }
     var searchResults  by remember { mutableStateOf<List<Song>>(emptyList()) }
     var isSearching    by remember { mutableStateOf(false) }
     var searchMode     by remember { mutableStateOf<SearchMode>(SearchMode.Idle) }
@@ -66,21 +69,36 @@ fun SearchScreen(
     var downloadedIds  by remember { mutableStateOf<Set<String>>(emptySet()) }
     var debounceJob    by remember { mutableStateOf<Job?>(null) }
 
+    var currentPage    by remember { mutableStateOf(1) }
+    var isLoadingMore  by remember { mutableStateOf(false) }
+    var hasMoreResults by remember { mutableStateOf(true) }
+    val listState      = androidx.compose.foundation.lazy.rememberLazyListState()
+
+    LaunchedEffect(initialQuery) {
+        if (initialQuery.isNotBlank()) {
+            query = initialQuery
+        }
+    }
+
     // ── Debounced live search ─────────────────────────────────────────────────
     LaunchedEffect(query) {
         if (query.length < 2) {
             searchResults = emptyList()
             searchMode    = SearchMode.Idle
+            currentPage   = 1
+            hasMoreResults = true
             return@LaunchedEffect
         }
         debounceJob?.cancel()
         debounceJob = scope.launch {
-            delay(500)   // wait 500ms after user stops typing
-            isSearching = true
-            searchMode  = if (isNetworkAvailable) SearchMode.YouTube else SearchMode.Local
+            delay(400)   // wait 400ms after user stops typing
+            isSearching   = true
+            currentPage   = 1
+            hasMoreResults = true
+            searchMode    = if (isNetworkAvailable) SearchMode.YouTube else SearchMode.Local
 
             val results = if (isNetworkAvailable) {
-                repository.searchOnlineSongs(query)
+                repository.searchOnlineSongs(query, page = 1, allowLong = allowLongTracks)
             } else {
                 repository.searchLocalSongs(query).let { flow ->
                     allLocalSongs.filter {
@@ -91,14 +109,52 @@ fun SearchScreen(
                 }
             }
 
-            searchResults = results
+            val finalResults = if (allowLongTracks) results else results.filter { it.duration <= 300_000 }
+            searchResults = finalResults
             isSearching   = false
 
             // Check which songs already downloaded
-            downloadedIds = results
+            downloadedIds = finalResults
                 .filter { it.videoId != null && SongDownloader.isAlreadyDownloaded(context, it.videoId!!) }
                 .map { it.videoId!! }
                 .toSet()
+        }
+    }
+
+    // ── Infinite Scroll Pagination ────────────────────────────────────────────
+    val shouldLoadMore by remember {
+        derivedStateOf {
+            val totalItems = searchResults.size
+            val lastVisibleIndex = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+            lastVisibleIndex >= totalItems - 4 && !isLoadingMore && !isSearching && hasMoreResults && searchResults.isNotEmpty()
+        }
+    }
+
+    LaunchedEffect(shouldLoadMore) {
+        if (shouldLoadMore && isNetworkAvailable && query.length >= 2) {
+            try {
+                isLoadingMore = true
+                val nextPage = currentPage + 1
+                val moreSongs = repository.searchOnlineSongs(query, page = nextPage, allowLong = allowLongTracks)
+                val cleanMore = if (allowLongTracks) moreSongs else moreSongs.filter { it.duration <= 300_000 }
+                if (cleanMore.isEmpty()) {
+                    hasMoreResults = false
+                } else {
+                    val currentIds = searchResults.map { it.id }.toSet()
+                    val newUnique = cleanMore.filterNot { currentIds.contains(it.id) }
+                    if (newUnique.isEmpty()) {
+                        hasMoreResults = false
+                    } else {
+                        searchResults = searchResults + newUnique
+                        currentPage = nextPage
+                    }
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("SearchScreen", "Pagination error", e)
+                hasMoreResults = false
+            } finally {
+                isLoadingMore = false
+            }
         }
     }
 
@@ -139,7 +195,7 @@ fun SearchScreen(
             onValueChange = { query = it },
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
+                .padding(horizontal = 16.dp, vertical = 6.dp),
             placeholder = {
                 Text(
                     text = if (isNetworkAvailable) "Search songs, artists, albums…" else "Search offline library…",
@@ -151,7 +207,12 @@ fun SearchScreen(
             },
             trailingIcon = {
                 if (query.isNotEmpty()) {
-                    IconButton(onClick = { query = ""; searchResults = emptyList() }) {
+                    IconButton(onClick = {
+                        query = ""
+                        searchResults = emptyList()
+                        focusManager.clearFocus()
+                        keyboard?.hide()
+                    }) {
                         Icon(Icons.Default.Close, contentDescription = "Clear", tint = TextSecondary)
                     }
                 }
@@ -168,8 +229,50 @@ fun SearchScreen(
             shape = RoundedCornerShape(16.dp),
             singleLine = true,
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-            keyboardActions = KeyboardActions(onSearch = { keyboard?.hide() }),
+            keyboardActions = KeyboardActions(onSearch = {
+                keyboard?.hide()
+                focusManager.clearFocus()
+            }),
         )
+
+        // ── Quick Filter Pills ───────────────────────────────────────────────
+        val quickCategories = listOf("Bollywood", "Phonk", "Pop", "Punjabi", "English", "Lo-Fi", "EDM", "Romantic", "Rock", "Hip Hop")
+        androidx.compose.foundation.lazy.LazyRow(
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            items(quickCategories) { cat ->
+                val isSelected = query.contains(cat, ignoreCase = true)
+                FilterChip(
+                    selected = isSelected,
+                    onClick = {
+                        focusManager.clearFocus()
+                        keyboard?.hide()
+                        query = when (cat) {
+                            "Pop" -> "Pop hit songs"
+                            "Bollywood" -> "Bollywood hit songs"
+                            "Phonk" -> "Phonk music"
+                            "English" -> "Trending English songs"
+                            "Lo-Fi" -> "Lo-Fi chill beats"
+                            "EDM" -> "EDM dance hits"
+                            "Punjabi" -> "Punjabi hit songs"
+                            "Romantic" -> "Romantic Hindi songs"
+                            "Rock" -> "Classic rock songs"
+                            "Hip Hop" -> "Hip Hop rap songs"
+                            else -> "$cat songs"
+                        }
+                        keyboard?.hide()
+                    },
+                    label = { Text(cat, fontSize = 12.sp) },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = PrimaryPurple,
+                        selectedLabelColor = Color.White,
+                        containerColor = SurfaceDark,
+                        labelColor = TextSecondary
+                    )
+                )
+            }
+        }
 
         // ── Body ───────────────────────────────────────────────────────────────
         AnimatedContent(
@@ -191,7 +294,24 @@ fun SearchScreen(
                         }
                     }
                 }
-                "empty" -> SearchIdleView(isNetworkAvailable)
+                "empty" -> SearchIdleView(isNetworkAvailable, onGenreClick = { selectedGenre ->
+                    focusManager.clearFocus()
+                    keyboard?.hide()
+                    query = when (selectedGenre) {
+                        "Pop" -> "Pop hit songs"
+                        "Bollywood" -> "Bollywood hit songs"
+                        "Phonk" -> "Phonk music"
+                        "English" -> "Trending English songs"
+                        "Lo-Fi" -> "Lo-Fi chill beats"
+                        "EDM" -> "EDM dance hits"
+                        "Punjabi" -> "Punjabi hit songs"
+                        "Romantic" -> "Romantic Hindi songs"
+                        "Rock" -> "Classic rock songs"
+                        "Hip-Hop" -> "Hip Hop rap songs"
+                        else -> "$selectedGenre songs"
+                    }
+                    keyboard?.hide()
+                })
                 "no_results" -> {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -203,6 +323,7 @@ fun SearchScreen(
                 "results" -> {
                     LazyColumn(
                         modifier = Modifier.fillMaxSize(),
+                        state = listState,
                         contentPadding = PaddingValues(vertical = 8.dp),
                     ) {
                         item {
@@ -238,6 +359,26 @@ fun SearchScreen(
                                 onFavorite     = { onToggleFavorite(song) },
                             )
                         }
+                        if (isLoadingMore) {
+                            item {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(16.dp),
+                                    horizontalArrangement = Arrangement.Center,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    CircularProgressIndicator(
+                                        color = PrimaryPurple,
+                                        modifier = Modifier.size(20.dp),
+                                        strokeWidth = 2.dp
+                                    )
+                                    Spacer(Modifier.width(10.dp))
+                                    Text("Loading more songs…", color = TextSecondary, fontSize = 13.sp)
+                                }
+                            }
+                        }
+
                         item { Spacer(Modifier.height(100.dp)) }
                     }
                 }
@@ -357,14 +498,14 @@ private fun SearchResultItem(
 
 // ── Idle / welcome state ───────────────────────────────────────────────────────
 @Composable
-private fun SearchIdleView(isNetworkAvailable: Boolean) {
-    val genres = listOf("Pop", "Hip-Hop", "Rock", "Bollywood", "Lo-Fi", "EDM", "Jazz", "Classical", "Arabic", "Indie")
+private fun SearchIdleView(isNetworkAvailable: Boolean, onGenreClick: (String) -> Unit) {
+    val genres = listOf("Pop", "Phonk", "Bollywood", "English", "Hip-Hop", "Rock", "Lo-Fi", "EDM", "Punjabi", "Indie")
     Column(
         modifier = Modifier
             .fillMaxSize()
             .padding(horizontal = 20.dp, vertical = 16.dp),
     ) {
-        Text("Browse Genres", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+        Text("Browse Top Genres", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 18.sp)
         Spacer(Modifier.height(12.dp))
         genres.chunked(2).forEach { row ->
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -372,16 +513,17 @@ private fun SearchIdleView(isNetworkAvailable: Boolean) {
                     Box(
                         modifier = Modifier
                             .weight(1f)
-                            .height(52.dp)
-                            .clip(RoundedCornerShape(12.dp))
+                            .height(56.dp)
+                            .clip(RoundedCornerShape(14.dp))
                             .background(
                                 Brush.linearGradient(
-                                    colors = listOf(PrimaryPurple.copy(alpha = 0.6f), AccentCyan.copy(alpha = 0.3f))
+                                    colors = listOf(PrimaryPurple.copy(alpha = 0.55f), SecondaryCyan.copy(alpha = 0.35f))
                                 )
-                            ),
+                            )
+                            .clickable { onGenreClick(genre) },
                         contentAlignment = Alignment.Center,
                     ) {
-                        Text(genre, color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                        Text(genre, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
                     }
                 }
                 if (row.size == 1) Spacer(Modifier.weight(1f))

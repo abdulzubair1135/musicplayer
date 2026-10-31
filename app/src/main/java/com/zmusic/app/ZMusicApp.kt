@@ -3,6 +3,7 @@ package com.zmusic.app
 import android.app.Application
 import com.zmusic.app.data.repository.MusicRepository
 import com.zmusic.app.player.MusicPlayerController
+import kotlinx.coroutines.launch
 
 class ZMusicApp : Application() {
 
@@ -17,6 +18,9 @@ class ZMusicApp : Application() {
         instance = this
         repository = MusicRepository(this)
         playerController = MusicPlayerController.getInstance(this)
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+            com.zmusic.app.data.api.ApiConfig.autoDetectFastestServer()
+        }
     }
 
     companion object {

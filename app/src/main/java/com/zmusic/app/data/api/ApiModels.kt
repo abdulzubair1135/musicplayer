@@ -50,3 +50,9 @@ data class HealthResponse(
     @SerializedName("timestamp") val timestamp: String,
     @SerializedName("version")   val version: String,
 )
+
+data class LyricsResponse(
+    @SerializedName("syncedLyrics") val syncedLyrics: String? = null,
+    @SerializedName("plainLyrics")  val plainLyrics: String? = null,
+    @SerializedName("instrumental") val instrumental: Boolean = false,
+)

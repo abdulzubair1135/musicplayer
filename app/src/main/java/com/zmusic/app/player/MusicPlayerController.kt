@@ -51,6 +51,22 @@ class MusicPlayerController private constructor(private val context: Context) {
     private val _sleepTimerMillis = MutableStateFlow<Long?>(null)
     val sleepTimerMillis: StateFlow<Long?> = _sleepTimerMillis.asStateFlow()
 
+    private val _playbackSpeed = MutableStateFlow(1.0f)
+    val playbackSpeed: StateFlow<Float> = _playbackSpeed.asStateFlow()
+
+    private val _playbackPitch = MutableStateFlow(1.0f)
+    val playbackPitch: StateFlow<Float> = _playbackPitch.asStateFlow()
+
+    fun setPlaybackSpeedAndPitch(speed: Float, pitch: Float) {
+        _playbackSpeed.value = speed
+        _playbackPitch.value = pitch
+        mediaController?.playbackParameters = androidx.media3.common.PlaybackParameters(speed, pitch)
+    }
+
+    fun setNormalMode() = setPlaybackSpeedAndPitch(1.0f, 1.0f)
+    fun setSlowedReverbMode() = setPlaybackSpeedAndPitch(0.85f, 0.85f)
+    fun setNightcoreMode() = setPlaybackSpeedAndPitch(1.15f, 1.15f)
+
     private var songMap = mutableMapOf<String, Song>()
     private var progressUpdateJob: Job? = null
     private var sleepTimerJob: Job? = null
@@ -88,6 +104,10 @@ class MusicPlayerController private constructor(private val context: Context) {
                 mediaItem?.mediaId?.let { idStr ->
                     songMap[idStr]?.let { song ->
                         _currentSong.value = song
+                        val index = _currentQueue.value.indexOfFirst { it.id.toString() == idStr }
+                        if (index != -1) {
+                            AudioCacheManager.preCacheNextSongs(context, _currentQueue.value, index)
+                        }
                     }
                 }
                 _duration.value = controller.duration.coerceAtLeast(0L)
@@ -100,7 +120,7 @@ class MusicPlayerController private constructor(private val context: Context) {
             }
 
             override fun onPlayerError(error: PlaybackException) {
-                // Handle missing or corrupted files gracefully by skipping to next
+                android.util.Log.e("MusicPlayerController", "Playback error: ${error.message}", error)
                 skipToNext()
             }
         })
@@ -127,11 +147,25 @@ class MusicPlayerController private constructor(private val context: Context) {
         if (songs.isEmpty()) return
         val controller = mediaController ?: return
 
-        _currentQueue.value = songs
-        songMap.clear()
-        songs.forEach { songMap[it.id.toString()] = it }
+        val targetSong = songs.getOrNull(startIndex) ?: songs.first()
+        val isTargetOnline = targetSong.sourceType == com.zmusic.app.data.model.SourceType.ONLINE || !targetSong.videoId.isNullOrBlank()
 
-        val mediaItems = songs.map { song ->
+        // If playing an online song, strictly ensure ONLY online songs are in queue!
+        // Local tracks are never mixed into an online queue!
+        val sanitizedSongs = if (isTargetOnline) {
+            val onlineOnly = songs.filter { it.sourceType == com.zmusic.app.data.model.SourceType.ONLINE || !it.videoId.isNullOrBlank() }
+            if (onlineOnly.isNotEmpty()) onlineOnly else listOf(targetSong)
+        } else {
+            songs
+        }
+
+        val actualIndex = sanitizedSongs.indexOfFirst { it.id == targetSong.id }.coerceAtLeast(0)
+
+        _currentQueue.value = sanitizedSongs
+        songMap.clear()
+        sanitizedSongs.forEach { songMap[it.id.toString()] = it }
+
+        val mediaItems = sanitizedSongs.map { song ->
             val metadata = MediaMetadata.Builder()
                 .setTitle(song.title)
                 .setArtist(song.artist)
@@ -139,8 +173,12 @@ class MusicPlayerController private constructor(private val context: Context) {
                 .setArtworkUri(song.artworkUri?.let { Uri.parse(it) })
                 .build()
 
-            val playbackUri = if (song.sourceType == com.zmusic.app.data.model.SourceType.ONLINE && !song.streamUri.isNullOrBlank()) {
-                Uri.parse(song.streamUri)
+            val playbackUri = if (song.sourceType == com.zmusic.app.data.model.SourceType.ONLINE || !song.videoId.isNullOrBlank()) {
+                if (!song.videoId.isNullOrBlank()) {
+                    Uri.parse(com.zmusic.app.data.api.ZMusicApiService.streamUrl(song.videoId!!))
+                } else {
+                    Uri.parse(song.streamUri ?: song.contentUri)
+                }
             } else {
                 Uri.parse(song.contentUri)
             }
@@ -152,11 +190,12 @@ class MusicPlayerController private constructor(private val context: Context) {
                 .build()
         }
 
-        controller.setMediaItems(mediaItems, startIndex, 0L)
+        controller.setMediaItems(mediaItems, actualIndex, 0L)
         controller.prepare()
         controller.play()
 
-        _currentSong.value = songs.getOrNull(startIndex)
+        _currentSong.value = sanitizedSongs.getOrNull(actualIndex)
+        AudioCacheManager.preCacheNextSongs(context, sanitizedSongs, actualIndex)
     }
 
     fun togglePlayPause() {

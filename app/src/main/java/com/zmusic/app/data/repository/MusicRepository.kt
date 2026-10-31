@@ -47,12 +47,12 @@ class MusicRepository(context: Context) {
     fun getSongsByGenre(genre: String): Flow<List<Song>>   = songDao.getSongsByGenre(genre)
 
     // ── Online (YouTube API) ───────────────────────────────────────────────────
-    suspend fun getOnlineDiscover(): List<Song> = onlineProvider.getDiscoverSection()
-    suspend fun getOnlineTrending(): List<Song> = onlineProvider.getTrending()
+    suspend fun getOnlineDiscover(allowLong: Boolean = false): List<Song> = onlineProvider.getDiscoverSection(allowLong)
+    suspend fun getOnlineTrending(allowLong: Boolean = false): List<Song> = onlineProvider.getTrending(allowLong)
 
-    /** Live YouTube search — returns results from the backend */
-    suspend fun searchOnlineSongs(query: String): List<Song> =
-        onlineProvider.searchDirect(query)
+    /** Live YouTube search — returns results from the backend with pagination */
+    suspend fun searchOnlineSongs(query: String, page: Int = 1, allowLong: Boolean = false): List<Song> =
+        onlineProvider.searchDirect(query, page, allowLong)
 
     // Keep Flow version for compatibility
     fun searchOnlineSongsFlow(query: String) = onlineProvider.searchSongs(query)
@@ -112,9 +112,17 @@ class MusicRepository(context: Context) {
     suspend fun clearHistory() = historyDao.clearHistory()
 
     // ── Radio ──────────────────────────────────────────────────────────────────
-    suspend fun getSongRadioQueue(seedSong: Song, isOnlineAvailable: Boolean): List<Song> {
-        if (seedSong.sourceType == SourceType.ONLINE && isOnlineAvailable) {
-            return onlineProvider.getRadioForSong(seedSong)
+    suspend fun getSongRadioQueue(seedSong: Song, isOnlineAvailable: Boolean, allowLong: Boolean = false): List<Song> {
+        if (seedSong.sourceType == SourceType.ONLINE || !seedSong.videoId.isNullOrBlank()) {
+            if (isOnlineAvailable) {
+                val radio = onlineProvider.getRadioForSong(seedSong, allowLong)
+                if (radio.isNotEmpty()) return radio
+                val artistHits = onlineProvider.searchDirect(seedSong.artist, 1, allowLong)
+                if (artistHits.isNotEmpty()) return artistHits
+                val genreHits = onlineProvider.searchDirect(if (seedSong.genre != "Online") "${seedSong.genre} hits" else "Trending music", 1, allowLong)
+                if (genreHits.isNotEmpty()) return genreHits
+            }
+            return listOf(seedSong)
         }
         val allLocal   = songDao.getAllSongs().first()
         val recentIds  = historyDao.getRecentSongIds()

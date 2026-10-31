@@ -54,6 +54,27 @@ import com.zmusic.app.ui.theme.TextMuted
 import com.zmusic.app.ui.theme.TextPrimary
 import com.zmusic.app.ui.theme.TextSecondary
 
+data class ArtistCardData(
+    val name: String,
+    val imageUrl: String,
+    val searchQuery: String
+)
+
+val curatedPopularArtists = listOf(
+    ArtistCardData("Arijit Singh", "https://i.ytimg.com/vi/VAdGW7QDJiU/hqdefault.jpg", "Arijit Singh hit songs"),
+    ArtistCardData("Diljit Dosanjh", "https://i.ytimg.com/vi/cl0a3i2wFcc/hqdefault.jpg", "Diljit Dosanjh hit songs"),
+    ArtistCardData("The Weeknd", "https://i.ytimg.com/vi/4NRXx6U8ABQ/hqdefault.jpg", "The Weeknd top hits"),
+    ArtistCardData("Taylor Swift", "https://i.ytimg.com/vi/ic8j13piAhQ/hqdefault.jpg", "Taylor Swift songs"),
+    ArtistCardData("Ed Sheeran", "https://i.ytimg.com/vi/JGwWNGJdvx8/hqdefault.jpg", "Ed Sheeran hit songs"),
+    ArtistCardData("Billie Eilish", "https://i.ytimg.com/vi/d5gf9dXbPi0/hqdefault.jpg", "Billie Eilish songs"),
+    ArtistCardData("AP Dhillon", "https://i.ytimg.com/vi/VNs_cCtdbPc/hqdefault.jpg", "AP Dhillon hit songs"),
+    ArtistCardData("Shreya Ghoshal", "https://i.ytimg.com/vi/zRtPUIumXcY/hqdefault.jpg", "Shreya Ghoshal songs"),
+    ArtistCardData("Sidhu Moose Wala", "https://i.ytimg.com/vi/NvrIwnvTLHM/hqdefault.jpg", "Sidhu Moose Wala songs"),
+    ArtistCardData("Alan Walker", "https://i.ytimg.com/vi/60ItHLz5WEA/hqdefault.jpg", "Alan Walker songs"),
+    ArtistCardData("Atif Aslam", "https://i.ytimg.com/vi/SAcpESN_Fk4/hqdefault.jpg", "Atif Aslam hit songs"),
+    ArtistCardData("Justin Bieber", "https://i.ytimg.com/vi/tQ0yjYUFKAE/hqdefault.jpg", "Justin Bieber hit songs")
+)
+
 @Composable
 fun HomeScreen(
     recentlyPlayed: List<Song>,
@@ -190,17 +211,15 @@ fun HomeScreen(
                 }
             }
 
-            // Popular Artists
-            if (artists.isNotEmpty()) {
-                item {
-                    HomeSectionHeader(title = "Popular Artists", icon = Icons.Default.Person)
-                    LazyRow(
-                        contentPadding = PaddingValues(horizontal = 20.dp),
-                        horizontalArrangement = Arrangement.spacedBy(14.dp)
-                    ) {
-                        items(artists.take(8)) { artist ->
-                            ArtistCircle(name = artist, onClick = { onNavigateToArtist(artist) })
-                        }
+            // Popular Artists (Global & Trending Online Stars with Photos)
+            item {
+                HomeSectionHeader(title = "Popular Artists", icon = Icons.Default.Person)
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 20.dp),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    items(curatedPopularArtists) { artist ->
+                        ArtistCircle(artist = artist, onClick = { onNavigateToArtist(artist.searchQuery) })
                     }
                 }
             }
@@ -345,28 +364,35 @@ private fun OnlineSongCard(song: Song, onClick: () -> Unit) {
 }
 
 @Composable
-private fun ArtistCircle(name: String, onClick: () -> Unit) {
+private fun ArtistCircle(artist: ArtistCardData, onClick: () -> Unit) {
     Column(
         modifier = Modifier
-            .width(80.dp)
+            .width(82.dp)
             .clickable(onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Box(
             modifier = Modifier
-                .size(72.dp)
+                .size(74.dp)
                 .clip(CircleShape)
                 .background(Brush.linearGradient(listOf(PrimaryPurple, SecondaryCyan))),
             contentAlignment = Alignment.Center
         ) {
-            Icon(Icons.Default.Person, null, tint = Color.White, modifier = Modifier.size(32.dp))
+            AsyncImage(
+                model = artist.imageUrl,
+                contentDescription = artist.name,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(CircleShape)
+            )
         }
         Spacer(Modifier.height(6.dp))
         Text(
-            text = name,
+            text = artist.name,
             color = TextPrimary,
             fontSize = 11.sp,
-            fontWeight = FontWeight.Medium,
+            fontWeight = FontWeight.SemiBold,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
