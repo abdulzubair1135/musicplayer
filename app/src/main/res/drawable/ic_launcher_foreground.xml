@@ -1,12 +1,54 @@
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
+
+    <!-- Glowing Sound Wave Bars (Left Accent) -->
     <path
-        android:fillColor="#FF8B5CF6"
-        android:pathData="M0,0h108v108h-108z" />
+        android:pathData="M24,46 L24,62"
+        android:strokeWidth="4"
+        android:strokeLineCap="round"
+        android:strokeColor="#6606B6D4" />
     <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M38,28 L70,54 L38,80 Z" />
+        android:pathData="M30,38 L30,70"
+        android:strokeWidth="4"
+        android:strokeLineCap="round"
+        android:strokeColor="#9906B6D4" />
+
+    <!-- Glowing Sound Wave Bars (Right Accent) -->
+    <path
+        android:pathData="M78,38 L78,70"
+        android:strokeWidth="4"
+        android:strokeLineCap="round"
+        android:strokeColor="#99A855F7" />
+    <path
+        android:pathData="M84,46 L84,62"
+        android:strokeWidth="4"
+        android:strokeLineCap="round"
+        android:strokeColor="#66A855F7" />
+
+    <!-- Stylized Futuristic Neon "Z" Insignia with Musical Note Head -->
+    <!-- Top Horizontal Beam -->
+    <path
+        android:pathData="M37,34 C37,32 39,30 42,30 L67,30 C71,30 73,34 71,37 L45,71 L68,71 C71,71 73,73 73,76 C73,79 71,81 68,81 L40,81 C36,81 34,77 36,74 L62,40 L42,40 C39,40 37,38 37,34 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="36"
+                android:startY="30"
+                android:endX="73"
+                android:endY="81">
+                <item android:offset="0.0" android:color="#FF00F5FF" />
+                <item android:offset="0.5" android:color="#FF9D4EDD" />
+                <item android:offset="1.0" android:color="#FF7B2CBF" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Inner Core Play / Musical Node Highlight -->
+    <path
+        android:pathData="M52,50 L58,54 L52,58 Z"
+        android:fillColor="#FFFFFFFF" />
 </vector>

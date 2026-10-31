@@ -9,9 +9,14 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -32,6 +37,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -54,6 +60,7 @@ import com.zmusic.app.ui.screens.library.PlaylistDetailScreen
 import com.zmusic.app.ui.screens.player.FullPlayerScreen
 import com.zmusic.app.ui.screens.search.SearchScreen
 import com.zmusic.app.ui.screens.settings.SettingsScreen
+import com.zmusic.app.ui.screens.splash.AppSplashScreen
 import com.zmusic.app.ui.theme.BackgroundDark
 import com.zmusic.app.ui.theme.PrimaryPurple
 import com.zmusic.app.ui.theme.SurfaceDark
@@ -80,7 +87,20 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             ZMusicTheme {
-                MainAppScreen()
+                var showSplash by rememberSaveable { mutableStateOf(true) }
+                AnimatedContent(
+                    targetState = showSplash,
+                    transitionSpec = {
+                        fadeIn(animationSpec = tween(350)) togetherWith fadeOut(animationSpec = tween(350))
+                    },
+                    label = "SplashTransition"
+                ) { isSplash ->
+                    if (isSplash) {
+                        AppSplashScreen(onFinished = { showSplash = false })
+                    } else {
+                        MainAppScreen()
+                    }
+                }
             }
         }
     }

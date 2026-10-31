@@ -55,7 +55,7 @@ class DownloadWorker(
                 val file = File(dir, "${videoId}.mp3")
 
                 if (!file.exists()) {
-                    val streamUrl = "${ApiConfig.BASE_URL.trimEnd('/')}api/stream/$videoId"
+                    val streamUrl = com.zmusic.app.data.api.ZMusicApiService.streamUrl(videoId)
                     val connection = URL(streamUrl).openConnection() as HttpURLConnection
                     connection.connectTimeout = 30_000
                     connection.readTimeout    = 120_000
