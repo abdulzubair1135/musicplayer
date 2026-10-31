@@ -91,6 +91,9 @@ app.get('/api/search', async (req, res) => {
   }
 });
 
+const https = require('https');
+const http = require('http');
+
 // ── Stream Audio ──
 // GET /api/stream/:videoId
 app.get('/api/stream/:videoId', async (req, res) => {
@@ -102,36 +105,46 @@ app.get('/api/stream/:videoId', async (req, res) => {
 
   try {
     const info = await ytdl.getInfo(videoId);
-    const format = chooseFormat(info.formats, {
-      filter: f => f.hasAudio && !f.hasVideo,
-      quality: 'highestaudio',
-    });
+    const audioFormats = info.formats.filter(f => f.hasAudio && !f.hasVideo && f.url);
+    const format = chooseFormat(audioFormats, { quality: 'highestaudio' }) || audioFormats[0];
 
-    if (!format) {
+    if (!format || !format.url) {
       return res.status(404).json({ error: 'No audio format available.' });
     }
 
-    const contentLength = format.contentLength;
-    const mime = format.mimeType?.split(';')[0] || 'audio/webm';
+    const audioUrl = format.url;
+    const client = audioUrl.startsWith('https') ? https : http;
 
-    res.setHeader('Content-Type', mime);
-    res.setHeader('Accept-Ranges', 'bytes');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('X-Content-Type-Options', 'nosniff');
+    const proxyHeaders = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+    };
 
-    if (contentLength) {
-      res.setHeader('Content-Length', contentLength);
+    if (req.headers.range) {
+      proxyHeaders['Range'] = req.headers.range;
     }
-    res.status(200);
 
-    const stream = await ytdl.download(videoId, { format });
-    stream.pipe(res);
+    const proxyReq = client.get(audioUrl, { headers: proxyHeaders }, (proxyRes) => {
+      res.writeHead(proxyRes.statusCode, {
+        'Content-Type': proxyRes.headers['content-type'] || 'audio/mp4',
+        'Content-Length': proxyRes.headers['content-length'] || format.contentLength,
+        'Accept-Ranges': 'bytes',
+        'Content-Range': proxyRes.headers['content-range'],
+        'Access-Control-Allow-Origin': '*',
+        'Cache-Control': 'no-cache',
+      });
 
-    stream.on('error', err => {
-      console.error('Stream pipe error:', err.message);
+      proxyRes.pipe(res);
+    });
+
+    proxyReq.on('error', (err) => {
+      console.error('Proxy stream error:', err.message);
       if (!res.headersSent) {
-        res.status(500).end();
+        res.status(500).json({ error: 'Stream failed' });
       }
+    });
+
+    req.on('close', () => {
+      proxyReq.destroy();
     });
 
   } catch (err) {
@@ -153,34 +166,41 @@ app.get('/api/download/:videoId', async (req, res) => {
 
   try {
     const info = await ytdl.getInfo(videoId);
-    const format = chooseFormat(info.formats, {
-      filter: f => f.hasAudio && !f.hasVideo,
-      quality: 'highestaudio',
-    });
+    const audioFormats = info.formats.filter(f => f.hasAudio && !f.hasVideo && f.url);
+    const format = chooseFormat(audioFormats, { quality: 'highestaudio' }) || audioFormats[0];
 
-    if (!format) {
+    if (!format || !format.url) {
       return res.status(404).json({ error: 'No audio format available.' });
     }
 
     const title = (info.videoDetails?.title || videoId).replace(/[^a-zA-Z0-9_-]/g, '_');
     const ext = format.mimeType?.includes('mp4') ? 'm4a' : 'webm';
+    const client = format.url.startsWith('https') ? https : http;
 
     res.setHeader('Content-Disposition', `attachment; filename="${title}.${ext}"`);
-    res.setHeader('Content-Type', format.mimeType?.split(';')[0] || 'audio/webm');
+    res.setHeader('Content-Type', format.mimeType?.split(';')[0] || 'audio/mp4');
 
     if (format.contentLength) {
       res.setHeader('Content-Length', format.contentLength);
     }
 
-    const stream = await ytdl.download(videoId, { format });
-    stream.pipe(res);
+    const proxyReq = client.get(format.url, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+    }, (proxyRes) => {
+      proxyRes.pipe(res);
+    });
 
-    stream.on('error', err => {
-      console.error('Download pipe error:', err.message);
+    proxyReq.on('error', (err) => {
+      console.error('Download stream error:', err.message);
       if (!res.headersSent) {
         res.status(500).end();
       }
     });
+
+    req.on('close', () => {
+      proxyReq.destroy();
+    });
+
   } catch (err) {
     console.error('Download error:', err.message);
     if (!res.headersSent) {
