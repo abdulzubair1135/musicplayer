@@ -288,97 +288,58 @@ app.get('/api/stream/:videoId', async (req, res) => {
     return res.status(400).json({ error: 'Invalid video ID.' });
   }
 
-  try {
-    let audioUrl = null;
-    let format = null;
+  // High-speed audio stream endpoint (itag 140 = 128kbps AAC M4A audio)
+  const streamEndpoint = `https://yt.chocolatemoo53.com/latest_version?id=${videoId}&itag=140`;
 
-    const cached = streamUrlCache.get(videoId);
-    if (cached && (Date.now() - cached.time < 15 * 60 * 1000)) {
-      audioUrl = cached.audioUrl;
-      format = cached.format;
-    } else {
-      const infoPromise = ytdl.getInfo(videoId);
-      const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('YTDL stream fetch timeout')), 20000));
-      const info = await Promise.race([infoPromise, timeoutPromise]);
-
-      const audioFormats = info.formats.filter(f => f.hasAudio && !f.hasVideo && f.url);
-      format = chooseFormat(audioFormats, { quality: 'highestaudio' }) || audioFormats[0];
-
-      if (!format || !format.url) {
-        return res.status(404).json({ error: 'No audio format available.' });
-      }
-
-      audioUrl = format.url;
-      streamUrlCache.set(videoId, { audioUrl, format, time: Date.now() });
-    }
-    const client = audioUrl.startsWith('https') ? https : http;
-
-    const proxyHeaders = {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-    };
-
-    if (req.headers.range) {
-      proxyHeaders['Range'] = req.headers.range;
-    }
-
-    const streamAudio = (targetUrl, redirectCount = 0) => {
-      if (redirectCount > 4) {
-        if (!res.headersSent) res.status(500).json({ error: 'Too many redirects' });
-        return;
-      }
-
-      const client = targetUrl.startsWith('https') ? https : http;
-      const proxyReq = client.get(targetUrl, { headers: proxyHeaders }, (proxyRes) => {
-        if (proxyRes.statusCode >= 300 && proxyRes.statusCode < 400 && proxyRes.headers.location) {
-          return streamAudio(proxyRes.headers.location, redirectCount + 1);
-        }
-
-        const outHeaders = {
-          'Content-Type': proxyRes.headers['content-type'] || 'audio/mp4',
-          'Accept-Ranges': 'bytes',
-          'Access-Control-Allow-Origin': '*',
-          'Cache-Control': 'no-cache',
-        };
-
-        const len = proxyRes.headers['content-length'] || format.contentLength;
-        if (len) {
-          outHeaders['Content-Length'] = len;
-        }
-
-        if (proxyRes.headers['content-range']) {
-          outHeaders['Content-Range'] = proxyRes.headers['content-range'];
-        }
-
-        res.writeHead(proxyRes.statusCode, outHeaders);
-        proxyRes.pipe(res);
-      });
-
-      proxyReq.on('error', (err) => {
-        console.error('Proxy stream error:', err.message);
-        if (!res.headersSent) {
-          res.status(500).json({ error: 'Stream failed' });
-        }
-      });
-
-      req.on('close', () => {
-        proxyReq.destroy();
-      });
-    };
-
-    streamAudio(audioUrl);
-
-  } catch (err) {
-    console.error('Stream error:', err.message);
-    if (!res.headersSent) {
-      res.status(500).json({ error: 'Streaming failed. Video may be unavailable.', details: err.message });
-    }
+  if (req.query.proxy !== 'true') {
+    return res.redirect(302, streamEndpoint);
   }
+
+  // Fallback proxy if explicitly requested
+  const proxyHeaders = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+  };
+  if (req.headers.range) {
+    proxyHeaders['Range'] = req.headers.range;
+  }
+
+  const followRedirect = (url, depth = 0) => {
+    if (depth > 5) {
+      if (!res.headersSent) res.status(500).json({ error: 'Too many redirects' });
+      return;
+    }
+    const client = url.startsWith('https') ? https : http;
+    const proxyReq = client.get(url, { headers: proxyHeaders }, (proxyRes) => {
+      if (proxyRes.statusCode >= 300 && proxyRes.statusCode < 400 && proxyRes.headers.location) {
+        return followRedirect(proxyRes.headers.location, depth + 1);
+      }
+      res.writeHead(proxyRes.statusCode, {
+        'Content-Type': proxyRes.headers['content-type'] || 'audio/mp4',
+        'Accept-Ranges': 'bytes',
+        'Access-Control-Allow-Origin': '*',
+        'Cache-Control': 'public, max-age=3600',
+      });
+      proxyRes.pipe(res);
+    });
+    proxyReq.on('error', (err) => {
+      if (!res.headersSent) res.status(500).json({ error: err.message });
+    });
+    req.on('close', () => proxyReq.destroy());
+  };
+
+  followRedirect(streamEndpoint);
 });
 
 // ── Direct Download Endpoint ──
 // GET /api/download/:videoId
 app.get('/api/download/:videoId', async (req, res) => {
   const { videoId } = req.params;
+  if (!videoId || !/^[a-zA-Z0-9_-]{11}$/.test(videoId)) {
+    return res.status(400).json({ error: 'Invalid video ID.' });
+  }
+  const streamEndpoint = `https://yt.chocolatemoo53.com/latest_version?id=${videoId}&itag=140`;
+  res.redirect(302, streamEndpoint);
+});
 
   if (!videoId || !/^[a-zA-Z0-9_-]{11}$/.test(videoId)) {
     return res.status(400).json({ error: 'Invalid video ID.' });
