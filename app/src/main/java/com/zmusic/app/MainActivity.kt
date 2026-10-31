@@ -263,21 +263,13 @@ class MainActivity : ComponentActivity() {
                 ) {
                     composable(Screen.Home.route) {
                         HomeScreen(
-                            songs = allSongs,
                             recentlyPlayed = recentlyPlayed,
-                            favorites = favorites,
-                            artists = artists,
-                            albums = albums,
                             onlineDiscover = onlineDiscover,
                             onlineTrending = onlineTrending,
+                            artists = artists,
                             isNetworkAvailable = isNetworkAvailable,
-                            currentSong = currentSong,
                             onPlaySong = playSongAction,
-                            onStartRadio = startRadioAction,
-                            onToggleFavorite = { song -> scope.launch { repository.toggleFavorite(song) } },
-                            onScanMusic = { triggerMusicScan() },
-                            onNavigateToArtist = { },
-                            onNavigateToAlbum = { }
+                            onNavigateToArtist = { }
                         )
                     }
 

@@ -139,9 +139,15 @@ class MusicPlayerController private constructor(private val context: Context) {
                 .setArtworkUri(song.artworkUri?.let { Uri.parse(it) })
                 .build()
 
+            val playbackUri = if (song.sourceType == com.zmusic.app.data.model.SourceType.ONLINE && !song.streamUri.isNullOrBlank()) {
+                Uri.parse(song.streamUri)
+            } else {
+                Uri.parse(song.contentUri)
+            }
+
             MediaItem.Builder()
                 .setMediaId(song.id.toString())
-                .setUri(Uri.parse(song.contentUri))
+                .setUri(playbackUri)
                 .setMediaMetadata(metadata)
                 .build()
         }

@@ -15,47 +15,47 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.Call
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.ElectricBolt
+import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.MusicNote
-import androidx.compose.material.icons.filled.PlaylistPlay
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material.icons.filled.Public
+import androidx.compose.material.icons.filled.SmartToy
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
-import androidx.compose.material3.TabRowDefaults
-import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.zmusic.app.data.model.Playlist
 import com.zmusic.app.data.model.Song
+import com.zmusic.app.data.organizer.LocalMusicOrganizer
+import com.zmusic.app.data.organizer.MusicCategory
 import com.zmusic.app.ui.components.SongItem
-import com.zmusic.app.ui.theme.FavoriteRed
 import com.zmusic.app.ui.theme.PrimaryPurple
+import com.zmusic.app.ui.theme.SecondaryCyan
 import com.zmusic.app.ui.theme.SurfaceDark
+import com.zmusic.app.ui.theme.SurfaceVariantDark
+import com.zmusic.app.ui.theme.TextMuted
 import com.zmusic.app.ui.theme.TextPrimary
 import com.zmusic.app.ui.theme.TextSecondary
 
@@ -73,229 +73,204 @@ fun LibraryScreen(
     onSelectPlaylist: (Playlist) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var selectedTabIndex by remember { mutableIntStateOf(0) }
-    var showCreateDialog by remember { mutableStateOf(false) }
-    var newPlaylistName by remember { mutableStateOf("") }
+    // Run the Local Organizer Bot on the device songs
+    val organized = remember(allSongs) { LocalMusicOrganizer.organize(allSongs) }
+    var selectedCategory by remember { mutableStateOf(MusicCategory.PHONK) }
 
-    val tabs = listOf("Playlists", "Favorites", "All Songs")
+    val activeSongList = remember(selectedCategory, organized, favoriteSongs) {
+        when (selectedCategory) {
+            MusicCategory.PHONK -> organized.phonkTracks
+            MusicCategory.BOLLYWOOD -> organized.bollywoodTracks
+            MusicCategory.ENGLISH -> organized.englishTracks
+            MusicCategory.CALL_RECORDINGS -> organized.callRecordings
+            MusicCategory.DOWNLOADED -> organized.downloadedTracks.ifEmpty { favoriteSongs }
+            MusicCategory.ALL_MUSIC -> organized.allCleanMusic
+        }
+    }
 
-    Column(
+    Box(
         modifier = modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
-            .padding(top = 16.dp)
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(bottom = 120.dp)
         ) {
-            Text(
-                text = "Library",
-                style = MaterialTheme.typography.headlineLarge,
-                fontWeight = FontWeight.Bold,
-                color = TextPrimary
-            )
+            // Header
+            item {
+                Text(
+                    text = "Local Library",
+                    fontSize = 28.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = TextPrimary,
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 18.dp)
+                )
+            }
 
-            if (selectedTabIndex == 0) {
-                Button(
-                    onClick = { showCreateDialog = true },
-                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryPurple),
-                    shape = RoundedCornerShape(12.dp),
-                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
+            // 🤖 AI Organizer Bot Hero Card
+            item {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp, vertical = 6.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = SurfaceDark)
                 ) {
-                    Icon(Icons.Default.Add, contentDescription = null, tint = Color.White)
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("New Playlist", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                }
-            }
-        }
-
-        TabRow(
-            selectedTabIndex = selectedTabIndex,
-            containerColor = Color.Transparent,
-            contentColor = PrimaryPurple,
-            indicator = { tabPositions ->
-                TabRowDefaults.SecondaryIndicator(
-                    modifier = Modifier.tabIndicatorOffset(tabPositions[selectedTabIndex]),
-                    color = PrimaryPurple
-                )
-            }
-        ) {
-            tabs.forEachIndexed { index, title ->
-                Tab(
-                    selected = selectedTabIndex == index,
-                    onClick = { selectedTabIndex = index },
-                    text = {
-                        Text(
-                            text = title,
-                            color = if (selectedTabIndex == index) TextPrimary else TextSecondary,
-                            fontWeight = if (selectedTabIndex == index) FontWeight.Bold else FontWeight.Normal
-                        )
-                    }
-                )
-            }
-        }
-
-        when (selectedTabIndex) {
-            0 -> {
-                // Playlists Tab
-                if (playlists.isEmpty()) {
-                    Box(
+                    Row(
                         modifier = Modifier
-                            .fillMaxSize()
-                            .padding(32.dp),
-                        contentAlignment = Alignment.Center
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            text = "No playlists created yet. Tap 'New Playlist' above!",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = TextSecondary
-                        )
-                    }
-                } else {
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(bottom = 120.dp, top = 12.dp)
-                    ) {
-                        items(playlists) { playlist ->
-                            Card(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 20.dp, vertical = 6.dp)
-                                    .clickable { onSelectPlaylist(playlist) },
-                                colors = CardDefaults.cardColors(containerColor = SurfaceDark),
-                                shape = RoundedCornerShape(14.dp)
-                            ) {
-                                Row(
+                        Box(
+                            modifier = Modifier
+                                .size(50.dp)
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(Brush.linearGradient(listOf(PrimaryPurple, SecondaryCyan))),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Default.SmartToy, null, tint = Color.White, modifier = Modifier.size(28.dp))
+                        }
+                        Spacer(Modifier.width(14.dp))
+                        Column {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    "AI Organizer Bot",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = SecondaryCyan
+                                )
+                                Spacer(Modifier.width(6.dp))
+                                Box(
                                     modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(16.dp),
-                                    verticalAlignment = Alignment.CenterVertically
+                                        .clip(RoundedCornerShape(4.dp))
+                                        .background(PrimaryPurple.copy(alpha = 0.2f))
+                                        .padding(horizontal = 6.dp, vertical = 2.dp)
                                 ) {
-                                    Icon(
-                                        imageVector = Icons.Default.PlaylistPlay,
-                                        contentDescription = null,
-                                        tint = PrimaryPurple,
-                                        modifier = Modifier.size(36.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(16.dp))
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = playlist.name,
-                                            style = MaterialTheme.typography.titleMedium,
-                                            color = TextPrimary
-                                        )
-                                        Text(
-                                            text = "${playlist.songCount} songs",
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            color = TextSecondary
-                                        )
-                                    }
-                                    IconButton(onClick = { onDeletePlaylist(playlist.id) }) {
-                                        Icon(
-                                            imageVector = Icons.Default.Delete,
-                                            contentDescription = "Delete",
-                                            tint = TextSecondary
-                                        )
-                                    }
+                                    Text("Active", fontSize = 10.sp, color = PrimaryPurple, fontWeight = FontWeight.Bold)
                                 }
                             }
-                        }
-                    }
-                }
-            }
-
-            1 -> {
-                // Favorites Tab
-                if (favoriteSongs.isEmpty()) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(32.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Icon(Icons.Default.Favorite, contentDescription = null, tint = FavoriteRed, modifier = Modifier.size(60.dp))
-                            Spacer(modifier = Modifier.height(12.dp))
-                            Text("No favorite songs yet", style = MaterialTheme.typography.bodyLarge, color = TextSecondary)
-                        }
-                    }
-                } else {
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(bottom = 120.dp)
-                    ) {
-                        items(favoriteSongs) { song ->
-                            SongItem(
-                                song = song,
-                                isCurrentPlaying = song.id == currentSong?.id,
-                                isFavorite = true,
-                                onClick = { onPlaySong(song, favoriteSongs) },
-                                onStartRadio = { onStartRadio(song) },
-                                onToggleFavorite = { onToggleFavorite(song) }
+                            Spacer(Modifier.height(2.dp))
+                            Text(
+                                "${organized.musicTracks} Music Tracks Organized",
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = TextPrimary
+                            )
+                            Text(
+                                "Quarantined ${organized.quarantinedCount} call & voice notes from songs",
+                                fontSize = 12.sp,
+                                color = TextMuted
                             )
                         }
                     }
                 }
             }
 
-            2 -> {
-                // All Songs Tab
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(bottom = 120.dp)
+            // Category Filter Pills
+            item {
+                Spacer(Modifier.height(10.dp))
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 20.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    items(allSongs) { song ->
-                        SongItem(
-                            song = song,
-                            isCurrentPlaying = song.id == currentSong?.id,
-                            onClick = { onPlaySong(song, allSongs) },
-                            onStartRadio = { onStartRadio(song) },
-                            onToggleFavorite = { onToggleFavorite(song) }
+                    items(MusicCategory.values()) { category ->
+                        val isSelected = category == selectedCategory
+                        val count = when (category) {
+                            MusicCategory.PHONK -> organized.phonkTracks.size
+                            MusicCategory.BOLLYWOOD -> organized.bollywoodTracks.size
+                            MusicCategory.ENGLISH -> organized.englishTracks.size
+                            MusicCategory.CALL_RECORDINGS -> organized.callRecordings.size
+                            MusicCategory.DOWNLOADED -> organized.downloadedTracks.size.let { if (it > 0) it else favoriteSongs.size }
+                            MusicCategory.ALL_MUSIC -> organized.allCleanMusic.size
+                        }
+
+                        val bgColor = if (isSelected) PrimaryPurple else SurfaceVariantDark
+                        val textColor = if (isSelected) Color.White else TextSecondary
+
+                        Row(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(20.dp))
+                                .background(bgColor)
+                                .clickable { selectedCategory = category }
+                                .padding(horizontal = 14.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(category.iconEmoji, fontSize = 13.sp)
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                category.title,
+                                color = textColor,
+                                fontSize = 13.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                "($count)",
+                                color = if (isSelected) Color.White.copy(alpha = 0.8f) else TextMuted,
+                                fontSize = 11.sp
+                            )
+                        }
+                    }
+                }
+                Spacer(Modifier.height(14.dp))
+            }
+
+            // Quarantined Alert if Call Recordings tab selected
+            if (selectedCategory == MusicCategory.CALL_RECORDINGS) {
+                item {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp, vertical = 4.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF2E1A1A)),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.Warning, null, tint = Color(0xFFFF5252), modifier = Modifier.size(20.dp))
+                            Spacer(Modifier.width(10.dp))
+                            Text(
+                                "These audio recordings are isolated from normal music queues so they never play during random shuffle.",
+                                fontSize = 12.sp,
+                                color = Color(0xFFFF8A80)
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                }
+            }
+
+            // Songs List for Selected Category
+            if (activeSongList.isEmpty()) {
+                item {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(40.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            "No songs found in ${selectedCategory.title}",
+                            color = TextMuted,
+                            fontSize = 14.sp
                         )
                     }
                 }
-            }
-        }
-
-        // Create Playlist Dialog
-        if (showCreateDialog) {
-            AlertDialog(
-                onDismissRequest = { showCreateDialog = false },
-                title = { Text("Create Playlist", color = TextPrimary) },
-                text = {
-                    OutlinedTextField(
-                        value = newPlaylistName,
-                        onValueChange = { newPlaylistName = it },
-                        label = { Text("Playlist Name") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
+            } else {
+                items(activeSongList) { song ->
+                    SongItem(
+                        song = song,
+                        isCurrentPlaying = song.id == currentSong?.id,
+                        onClick = { onPlaySong(song, activeSongList) },
+                        onStartRadio = { onStartRadio(song) },
+                        onToggleFavorite = { onToggleFavorite(song) }
                     )
-                },
-                confirmButton = {
-                    Button(
-                        onClick = {
-                            if (newPlaylistName.isNotBlank()) {
-                                onCreatePlaylist(newPlaylistName.trim())
-                                newPlaylistName = ""
-                                showCreateDialog = false
-                            }
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = PrimaryPurple)
-                    ) {
-                        Text("Create")
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = { showCreateDialog = false }) {
-                        Text("Cancel", color = TextSecondary)
-                    }
-                },
-                containerColor = SurfaceDark
-            )
+                }
+            }
         }
     }
 }
