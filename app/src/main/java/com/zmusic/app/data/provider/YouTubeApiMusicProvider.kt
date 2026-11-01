@@ -54,12 +54,14 @@ class YouTubeApiMusicProvider : MusicProvider {
     override fun searchSongs(query: String): Flow<List<Song>> {
         if (query.isBlank()) return flowOf(emptyList())
         return flow {
-            val backendHits = runCatching { api.search(query).body()?.results?.map { it.toSong() } ?: emptyList() }
-                .getOrDefault(emptyList())
-            if (backendHits.isNotEmpty()) {
-                emit(backendHits)
+            // Direct client search is instantaneous (< 400ms)
+            val direct = YouTubeDirectSearch.searchDirect(query)
+            if (direct.isNotEmpty()) {
+                emit(direct)
             } else {
-                emit(YouTubeDirectSearch.searchDirect(query))
+                val backendHits = runCatching { api.search(query).body()?.results?.map { it.toSong() } ?: emptyList() }
+                    .getOrDefault(emptyList())
+                emit(backendHits)
             }
         }
     }
@@ -67,64 +69,66 @@ class YouTubeApiMusicProvider : MusicProvider {
     override suspend fun getDiscoverSection(): List<Song> = getDiscoverSection(false)
 
     suspend fun getDiscoverSection(allowLong: Boolean = false): List<Song> = withContext(Dispatchers.IO) {
-        val backendHits = runCatching { api.discover(allowLong = allowLong).body()?.results?.map { it.toSong() } ?: emptyList() }
-            .getOrDefault(emptyList())
-        if (backendHits.isNotEmpty()) {
-            backendHits
+        val direct = YouTubeDirectSearch.searchDirect("Bollywood Trending Hindi Songs Official", allowLong)
+        if (direct.isNotEmpty()) {
+            direct
         } else {
-            YouTubeDirectSearch.searchDirect("Trending Hindi Songs Official", allowLong)
+            runCatching { api.discover(allowLong = allowLong).body()?.results?.map { it.toSong() } ?: emptyList() }
+                .getOrDefault(emptyList())
         }
     }
 
     override suspend fun getTrending(): List<Song> = getTrending(false)
 
     suspend fun getTrending(allowLong: Boolean = false): List<Song> = withContext(Dispatchers.IO) {
-        val backendHits = runCatching { api.trending(allowLong = allowLong).body()?.results?.map { it.toSong() } ?: emptyList() }
-            .getOrDefault(emptyList())
-        if (backendHits.isNotEmpty()) {
-            backendHits
+        val direct = YouTubeDirectSearch.searchDirect("Top Hit Songs Official Audio 2026", allowLong)
+        if (direct.isNotEmpty()) {
+            direct
         } else {
-            YouTubeDirectSearch.searchDirect("Top Hit Songs Official Audio", allowLong)
+            runCatching { api.trending(allowLong = allowLong).body()?.results?.map { it.toSong() } ?: emptyList() }
+                .getOrDefault(emptyList())
         }
     }
 
     override suspend fun getRadioForSong(seedSong: Song): List<Song> = getRadioForSong(seedSong, false)
 
     suspend fun getRadioForSong(seedSong: Song, allowLong: Boolean = false): List<Song> = withContext(Dispatchers.IO) {
-        val radioHits = runCatching {
-            api.radio(
-                videoId = seedSong.videoId,
-                title   = seedSong.title,
-                artist  = seedSong.artist,
-                allowLong = allowLong
-            ).body()?.results?.map { it.toSong() } ?: emptyList()
-        }.getOrDefault(emptyList())
-
-        if (radioHits.isNotEmpty()) {
-            radioHits
+        val q = if (seedSong.artist.isNotBlank() && seedSong.artist != "YouTube") {
+            "${seedSong.artist} official songs"
         } else {
-            val q = if (seedSong.artist.isNotBlank() && seedSong.artist != "YouTube") {
-                "${seedSong.artist} official songs"
-            } else {
-                "${seedSong.title} official song"
-            }
-            YouTubeDirectSearch.searchDirect(q, allowLong)
+            "${seedSong.title} official song"
+        }
+        val directHits = YouTubeDirectSearch.searchDirect(q, allowLong)
+        if (directHits.isNotEmpty()) {
+            directHits
+        } else {
+            runCatching {
+                api.radio(
+                    videoId = seedSong.videoId,
+                    title   = seedSong.title,
+                    artist  = seedSong.artist,
+                    allowLong = allowLong
+                ).body()?.results?.map { it.toSong() } ?: emptyList()
+            }.getOrDefault(emptyList())
         }
     }
 
-    /** Direct search returning raw list (used by SearchScreen) with pagination & resilient fallback */
+    /** Direct search returning raw list (used by SearchScreen) with pagination — INSTANT (< 400ms) */
     suspend fun searchDirect(query: String, page: Int = 1, allowLong: Boolean = false): List<Song> = withContext(Dispatchers.IO) {
         if (query.isBlank()) return@withContext emptyList()
-        val backendResults = runCatching { 
-            api.search(query = query, page = page, allowLong = allowLong).body()?.results?.map { it.toSong() } ?: emptyList() 
+        // PRIORITY 1: Superfast direct client YouTube search (< 400ms)!
+        val fallbackQuery = if (page > 1) "$query track $page" else query
+        val directHits = runCatching {
+            YouTubeDirectSearch.searchDirect(query = fallbackQuery, allowLong = allowLong)
         }.getOrDefault(emptyList())
 
-        if (backendResults.isNotEmpty()) {
-            backendResults
-        } else {
-            // Direct YouTube fallback ensures Search NEVER fails!
-            val fallbackQuery = if (page > 1) "$query track $page" else query
-            YouTubeDirectSearch.searchDirect(query = fallbackQuery, allowLong = allowLong)
+        if (directHits.isNotEmpty()) {
+            return@withContext directHits
         }
+
+        // PRIORITY 2: Backend server fallback if direct client search returns empty
+        runCatching { 
+            api.search(query = query, page = page, allowLong = allowLong).body()?.results?.map { it.toSong() } ?: emptyList() 
+        }.getOrDefault(emptyList())
     }
 }

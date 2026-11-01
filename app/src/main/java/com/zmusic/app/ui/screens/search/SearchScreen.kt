@@ -95,7 +95,7 @@ fun SearchScreen(
         }
         debounceJob?.cancel()
         debounceJob = scope.launch {
-            delay(400)   // wait 400ms after user stops typing
+            delay(200)   // fast 200ms debounce for snappy response
             isSearching   = true
             currentPage   = 1
             hasMoreResults = true

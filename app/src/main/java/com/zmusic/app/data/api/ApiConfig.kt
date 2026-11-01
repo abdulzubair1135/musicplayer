@@ -9,6 +9,7 @@ import java.util.concurrent.TimeUnit
 
 object ApiConfig {
     const val LOCAL_URL = "http://127.0.0.1:3000/"
+    const val WIFI_URL  = "http://10.217.198.31:3000/"
     const val DEFAULT_CLOUD_URL = "https://musicplayer-blyl.onrender.com/"
 
     @Volatile
@@ -86,7 +87,13 @@ object ApiConfig {
             return@withContext
         }
 
-        // 3. Fallback to cloud
+        // 3. Check PC server on local Wi-Fi
+        if (checkServerHealth(WIFI_URL)) {
+            activeUrl = WIFI_URL
+            return@withContext
+        }
+
+        // 4. Fallback to cloud
         activeUrl = DEFAULT_CLOUD_URL
     }
 }

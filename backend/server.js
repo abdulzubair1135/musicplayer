@@ -8,7 +8,7 @@ const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
 const ytSearch = require('yt-search');
 const { Ytdl, chooseFormat } = require('@distube/ytdl-core');
-const ytdl = new Ytdl();
+const ytdl = new Ytdl({ clients: ['visionos'] });
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -268,9 +268,9 @@ app.get('/api/lyrics', async (req, res) => {
   }
 });
 
-// Cache format URLs for 30 minutes to avoid re-extracting for player seeks
+// Cache format URLs for 6 hours to avoid re-extracting for player seeks
 const streamFormatCache = new Map();
-const STREAM_CACHE_TTL = 30 * 60 * 1000;
+const STREAM_CACHE_TTL = 6 * 60 * 60 * 1000;
 
 async function getAudioFormat(videoId) {
   const cached = streamFormatCache.get(videoId);
@@ -284,7 +284,7 @@ async function getAudioFormat(videoId) {
                  chooseFormat(audioFormats, { quality: 'highestaudio' }) ||
                  audioFormats[0];
   if (format && format.url) {
-    if (streamFormatCache.size > 200) {
+    if (streamFormatCache.size > 500) {
       const oldest = streamFormatCache.keys().next().value;
       streamFormatCache.delete(oldest);
     }
@@ -294,7 +294,7 @@ async function getAudioFormat(videoId) {
   return null;
 }
 
-// ── Stream Audio (Reliable Direct Proxy with HTTP 206 Seek Support) ──
+// ── Stream Audio (Lightning 302 Redirect with HTTP 206 Proxy Fallback) ──
 // GET /api/stream/:videoId
 app.get('/api/stream/:videoId', async (req, res) => {
   const { videoId } = req.params;
@@ -307,6 +307,12 @@ app.get('/api/stream/:videoId', async (req, res) => {
     const format = await getAudioFormat(videoId);
     if (!format || !format.url) {
       return res.status(404).json({ error: 'No audio format found.' });
+    }
+
+    // Direct ultra-fast 302 redirect by default!
+    // ExoPlayer connects straight to Google's edge CDN with 0 proxy delay!
+    if (req.query.proxy !== 'true') {
+      return res.redirect(302, format.url);
     }
 
     const proxyHeaders = {
