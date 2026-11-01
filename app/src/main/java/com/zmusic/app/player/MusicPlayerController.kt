@@ -74,6 +74,9 @@ class MusicPlayerController private constructor(private val context: Context) {
     private var progressUpdateJob: Job? = null
     private var sleepTimerJob: Job? = null
 
+    /** Callback invoked when queue has <= 3 remaining songs so continuous vibe songs are auto-fetched */
+    var onAutoRefillNeeded: ((Song, List<Song>) -> Unit)? = null
+
     init {
         initializeController()
     }
@@ -110,6 +113,11 @@ class MusicPlayerController private constructor(private val context: Context) {
                         val index = _currentQueue.value.indexOfFirst { it.id.toString() == idStr }
                         if (index != -1) {
                             AudioCacheManager.preCacheNextSongs(context, _currentQueue.value, index)
+                            // AUTO-REFILL: If remaining queue has <= 3 songs, auto-fetch matching vibe tracks!
+                            val remaining = _currentQueue.value.size - (index + 1)
+                            if (remaining <= 3) {
+                                onAutoRefillNeeded?.invoke(song, _currentQueue.value)
+                            }
                         }
                     }
                 }
@@ -322,6 +330,61 @@ class MusicPlayerController private constructor(private val context: Context) {
             controller.play()
         }
         AudioCacheManager.preCacheNextSongs(context, reordered, currentPlayingIndex)
+    }
+
+    /**
+     * Appends new songs to the end of the active ExoPlayer queue seamlessly
+     * without interrupting or restarting currently playing audio.
+     */
+    fun appendSongsToQueue(newSongs: List<Song>) {
+        val controller = mediaController ?: return
+        if (newSongs.isEmpty()) return
+
+        val existingVideoIds = _currentQueue.value.mapNotNull { it.videoId }.toSet()
+        val existingNumericIds = _currentQueue.value.map { it.id }.toSet()
+
+        val uniqueSongs = newSongs.filter { song ->
+            val vid = song.videoId
+            if (!vid.isNullOrBlank()) {
+                !existingVideoIds.contains(vid)
+            } else {
+                !existingNumericIds.contains(song.id)
+            }
+        }
+        if (uniqueSongs.isEmpty()) return
+
+        uniqueSongs.forEach { songMap[it.id.toString()] = it }
+        val updatedQueue = _currentQueue.value + uniqueSongs
+        _currentQueue.value = updatedQueue
+
+        val newMediaItems = uniqueSongs.map { song ->
+            val metadata = MediaMetadata.Builder()
+                .setTitle(song.title)
+                .setArtist(song.artist)
+                .setAlbumTitle(song.album)
+                .setArtworkUri(song.artworkUri?.let { Uri.parse(it) })
+                .build()
+
+            val playbackUri = if (song.sourceType == com.zmusic.app.data.model.SourceType.ONLINE || !song.videoId.isNullOrBlank()) {
+                if (!song.videoId.isNullOrBlank()) {
+                    Uri.parse(com.zmusic.app.data.api.ZMusicApiService.streamUrl(song.videoId!!))
+                } else {
+                    Uri.parse(song.streamUri ?: song.contentUri)
+                }
+            } else {
+                Uri.parse(song.contentUri)
+            }
+
+            MediaItem.Builder()
+                .setMediaId(song.id.toString())
+                .setUri(playbackUri)
+                .setMediaMetadata(metadata)
+                .build()
+        }
+
+        controller.addMediaItems(newMediaItems)
+        val currentIndex = controller.currentMediaItemIndex
+        AudioCacheManager.preCacheNextSongs(context, updatedQueue, currentIndex)
     }
 
     fun togglePlayPause() {

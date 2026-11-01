@@ -67,6 +67,7 @@ import com.zmusic.app.ui.theme.SurfaceDark
 import com.zmusic.app.ui.theme.TextPrimary
 import com.zmusic.app.ui.theme.TextSecondary
 import com.zmusic.app.ui.theme.ZMusicTheme
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -171,6 +172,38 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        // Render 24/7 Keep-Alive: Periodically ping health endpoint every 4 minutes while app is active
+        LaunchedEffect(Unit) {
+            while (true) {
+                try {
+                    com.zmusic.app.data.api.ApiConfig.triggerEagerWakeup()
+                } catch (_: Exception) {}
+                delay(4 * 60 * 1000L)
+            }
+        }
+
+        // INFINITE VIBE AUTOPLAY LOOP:
+        // Automatically fetches more songs of the EXACT same vibe whenever queue has <= 3 remaining songs!
+        LaunchedEffect(Unit) {
+            playerController.onAutoRefillNeeded = { currentSeed, queue ->
+                scope.launch {
+                    try {
+                        val existingIds = queue.map { it.videoId ?: it.id.toString() }.toSet()
+                        val freshVibeBatch = com.zmusic.app.data.provider.VibeAutoplayHelper.fetchVibeRecommendations(
+                            seedSong = currentSeed,
+                            existingVideoIds = existingIds,
+                            batchIndex = queue.size / 15
+                        )
+                        if (freshVibeBatch.isNotEmpty()) {
+                            playerController.appendSongsToQueue(freshVibeBatch)
+                        }
+                    } catch (e: Exception) {
+                        android.util.Log.e("MainActivity", "Infinite autoplay error", e)
+                    }
+                }
+            }
+        }
+
         val currentSong by playerController.currentSong.collectAsState()
         val isPlaying by playerController.isPlaying.collectAsState()
         val isBuffering by playerController.isBuffering.collectAsState()
@@ -255,21 +288,22 @@ class MainActivity : ComponentActivity() {
                 repository.recordPlayHistory(song)
             }
 
-            // AUTO-RECOMMENDATION ALGORITHM:
-            // When playing an online song, if queue has fewer than 6 different tracks (e.g. from search),
-            // automatically fetch 20+ similar mood/genre songs and append them so next songs always match the vibe!
-            if (isOnline && isNetworkAvailable && targetQueue.size < 6) {
+            // INFINITE VIBE AUTOPLAY:
+            // Always fetch 20+ songs of the EXACT same vibe and append to queue so the music NEVER stops!
+            if (isOnline && isNetworkAvailable) {
                 scope.launch {
                     try {
-                        val radioSongs = repository.getSongRadioQueue(song, isOnlineAvailable = isNetworkAvailable, allowLong = allowLongTracks)
-                        if (radioSongs.isNotEmpty()) {
-                            val existingIds = targetQueue.map { it.videoId ?: it.id.toString() }.toSet()
-                            val uniqueRadio = radioSongs.filter { (it.videoId ?: it.id.toString()) !in existingIds }
-                            val fullQueue = targetQueue + uniqueRadio
-                            playerController.updateQueuePreservingCurrent(fullQueue)
+                        val existingIds = targetQueue.map { it.videoId ?: it.id.toString() }.toSet()
+                        val vibeBatch = com.zmusic.app.data.provider.VibeAutoplayHelper.fetchVibeRecommendations(
+                            seedSong = song,
+                            existingVideoIds = existingIds,
+                            batchIndex = 0
+                        )
+                        if (vibeBatch.isNotEmpty()) {
+                            playerController.appendSongsToQueue(vibeBatch)
                         }
                     } catch (e: Exception) {
-                        android.util.Log.e("MainActivity", "Auto radio queue enhancement error", e)
+                        android.util.Log.e("MainActivity", "Vibe autoplay queue error", e)
                     }
                 }
             }
@@ -280,11 +314,14 @@ class MainActivity : ComponentActivity() {
             playerController.playQueue(listOf(seedSong), 0)
             scope.launch {
                 repository.recordPlayHistory(seedSong)
-                val radioList = repository.getSongRadioQueue(seedSong, isOnlineAvailable = isNetworkAvailable, allowLong = allowLongTracks)
-                if (radioList.isNotEmpty()) {
-                    val fresh = radioList.filter { it.videoId != seedSong.videoId && it.id != seedSong.id }
-                    playerController.updateQueuePreservingCurrent(listOf(seedSong) + fresh)
-                    Toast.makeText(this@MainActivity, "Auto-queue loaded with similar songs!", Toast.LENGTH_SHORT).show()
+                val vibeList = com.zmusic.app.data.provider.VibeAutoplayHelper.fetchVibeRecommendations(
+                    seedSong = seedSong,
+                    existingVideoIds = setOf(seedSong.videoId ?: seedSong.id.toString()),
+                    batchIndex = 0
+                )
+                if (vibeList.isNotEmpty()) {
+                    playerController.appendSongsToQueue(vibeList)
+                    Toast.makeText(this@MainActivity, "Infinite Vibe Autoplay Started! 🎶", Toast.LENGTH_SHORT).show()
                 }
             }
         }

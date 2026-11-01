@@ -23,8 +23,8 @@ import java.io.File
 
 @OptIn(UnstableApi::class)
 object AudioCacheManager {
-    private const val CACHE_SIZE = 500L * 1024 * 1024 // 500 MB local audio cache
-    private const val PRECACHE_BYTES = 2L * 1024 * 1024 // 2 MB per upcoming track for instant playback
+    private const val CACHE_SIZE = 1024L * 1024 * 1024 // 1 GB local audio cache
+    private const val PRECACHE_BYTES = 3L * 1024 * 1024 // 3 MB per upcoming track for instant playback
 
     private var simpleCache: SimpleCache? = null
     private var databaseProvider: StandaloneDatabaseProvider? = null
