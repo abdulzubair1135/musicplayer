@@ -17,9 +17,9 @@ object ApiConfig {
     val BASE_URL: String
         get() = activeUrl
 
-    const val CONNECT_TIMEOUT_SECONDS = 12L
-    const val READ_TIMEOUT_SECONDS    = 15L
-    const val WRITE_TIMEOUT_SECONDS   = 10L
+    const val CONNECT_TIMEOUT_SECONDS = 20L
+    const val READ_TIMEOUT_SECONDS    = 30L
+    const val WRITE_TIMEOUT_SECONDS   = 20L
 
     private const val PREFS_NAME = "zmusic_api_prefs"
     private const val KEY_CUSTOM_URL = "custom_server_url"

@@ -158,31 +158,25 @@ app.get('/api/search', async (req, res) => {
     const cleanSubject = cleanQ.replace(/hit songs|hits|best songs|all songs|top songs|jukebox|mix|songs|song|audio/gi, '').trim() || cleanQ;
     const lowerQ = cleanQ.toLowerCase();
 
-    // Generate targeted query variants based on genre and requested page
-    let queryVariants = [];
+    // Pick optimal primary query based on genre and page
+    let primaryQ = cleanQ;
     if (lowerQ.includes('phonk') || lowerQ.includes('funk')) {
-      if (page === 1) queryVariants = ['phonk track official', 'phonk music official audio'];
-      else if (page === 2) queryVariants = ['drift phonk audio track', 'phonk slowed reverb official'];
-      else if (page === 3) queryVariants = ['brazilian phonk track audio', 'aggressive phonk audio'];
-      else queryVariants = [`phonk track music ${page}`];
+      primaryQ = page === 1 ? 'phonk track official' : (page === 2 ? 'drift phonk audio track' : 'brazilian phonk track audio');
     } else {
-      if (page === 1) queryVariants = [`${cleanSubject} official song`, cleanQ];
-      else if (page === 2) queryVariants = [`${cleanSubject} official audio`, `${cleanSubject} audio track`];
-      else if (page === 3) queryVariants = [`${cleanSubject} popular song`, `${cleanSubject} lyrical song`];
-      else queryVariants = [`${cleanSubject} music audio ${page}`];
+      primaryQ = page === 1 ? (cleanSubject.length > 2 ? `${cleanSubject} official song` : cleanQ) : `${cleanSubject} audio track ${page}`;
     }
 
-    const searchResponses = await Promise.all(
-      queryVariants.map(q => ytSearch({ query: q }).catch(() => ({ videos: [] })))
-    );
+    const firstResult = await ytSearch({ query: primaryQ }).catch(() => ({ videos: [] }));
+    let candidateVideos = [...(firstResult.videos || [])];
 
-    const seenIds = new Set();
-    const candidateVideos = [];
-    for (const r of searchResponses) {
-      for (const v of (r.videos || [])) {
-        if (!v || !v.videoId || seenIds.has(v.videoId)) continue;
-        seenIds.add(v.videoId);
-        candidateVideos.push(v);
+    // If first search returned fewer than 8 candidates, fetch one secondary fallback
+    if (candidateVideos.length < 8) {
+      const fallbackQ = (lowerQ.includes('phonk') || lowerQ.includes('funk'))
+        ? 'phonk music official audio'
+        : `${cleanSubject} lyrical song`;
+      const secondResult = await ytSearch({ query: fallbackQ }).catch(() => ({ videos: [] }));
+      if (secondResult && secondResult.videos) {
+        candidateVideos.push(...secondResult.videos);
       }
     }
 
