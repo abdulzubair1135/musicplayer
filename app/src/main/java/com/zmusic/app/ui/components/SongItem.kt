@@ -1,10 +1,12 @@
 package com.zmusic.app.ui.components
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
@@ -89,6 +91,13 @@ fun SongItem(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
+            Spacer(modifier = Modifier.height(4.dp))
+            val tags = remember(song) { SongTagHelper.getTags(song) }
+            Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                tags.take(3).forEach { tag ->
+                    SongTagBadge(tag = tag, fontSize = 9.sp)
+                }
+            }
         }
 
         IconButton(onClick = { showMenu = true }) {

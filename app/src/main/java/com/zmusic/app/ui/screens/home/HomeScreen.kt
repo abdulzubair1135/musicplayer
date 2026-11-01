@@ -33,6 +33,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -46,6 +47,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.zmusic.app.data.model.Song
+import com.zmusic.app.ui.components.SongTagBadge
+import com.zmusic.app.ui.components.SongTagHelper
 import com.zmusic.app.ui.theme.PrimaryPurple
 import com.zmusic.app.ui.theme.PrimaryPurpleVariant
 import com.zmusic.app.ui.theme.SecondaryCyan
@@ -315,6 +318,13 @@ private fun HeroYouMayLikeCard(song: Song, onClick: () -> Unit) {
                         color = TextSecondary,
                         maxLines = 1
                     )
+                    Spacer(Modifier.height(6.dp))
+                    val heroTags = remember(song) { SongTagHelper.getTags(song) }
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        heroTags.take(3).forEach { tag ->
+                            SongTagBadge(tag = tag, fontSize = 9.sp)
+                        }
+                    }
                 }
 
                 Row(
@@ -357,12 +367,24 @@ private fun OnlineSongCard(song: Song, onClick: () -> Unit) {
             modifier = Modifier.size(140.dp),
             colors = CardDefaults.cardColors(containerColor = SurfaceDark)
         ) {
-            AsyncImage(
-                model = song.artworkUri,
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize()
-            )
+            Box(modifier = Modifier.fillMaxSize()) {
+                AsyncImage(
+                    model = song.artworkUri,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+                val primaryTag = remember(song) { SongTagHelper.getTags(song).firstOrNull() }
+                if (primaryTag != null) {
+                    SongTagBadge(
+                        tag = primaryTag,
+                        fontSize = 8.sp,
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(6.dp)
+                    )
+                }
+            }
         }
         Spacer(Modifier.height(6.dp))
         Text(

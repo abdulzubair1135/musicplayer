@@ -277,7 +277,24 @@ fun FullPlayerScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            // Song Tags Row (Genre, Audio Quality, Source Badges)
+            val fullPlayerTags = remember(song) { com.zmusic.app.ui.components.SongTagHelper.getTags(song) }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                fullPlayerTags.forEach { tag ->
+                    com.zmusic.app.ui.components.SongTagBadge(
+                        tag = tag,
+                        fontSize = 11.sp
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
 
             // Progress Slider & Timers
             Column(modifier = Modifier.fillMaxWidth()) {

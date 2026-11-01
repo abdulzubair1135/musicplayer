@@ -124,13 +124,13 @@ function setCachedSearch(key, data) {
 }
 
 // ── Search with Pagination & Duration Filter ──
-// GET /api/search?q=shape+of+you&page=1&limit=30&allowLong=false
+// GET /api/search?q=shape+of+you&page=1&limit=25&allowLong=false
 app.get('/api/search', async (req, res) => {
   const query = req.query.q;
   const page = Math.max(parseInt(req.query.page) || 1, 1);
-  const limit = Math.min(parseInt(req.query.limit) || 30, 50);
+  const limit = Math.min(parseInt(req.query.limit) || 25, 50);
   const allowLong = req.query.allowLong === 'true';
-  const maxDuration = allowLong ? 10800 : 360; // 6 mins default!
+  const maxDuration = allowLong ? 10800 : 300; // 5 mins max as user requested!
 
   if (!query || query.trim().length < 2) {
     return res.status(400).json({ error: 'Query too short. Minimum 2 characters.' });
@@ -139,7 +139,7 @@ app.get('/api/search', async (req, res) => {
   const cleanQ = query.trim();
   const cacheKey = `${cleanQ.toLowerCase()}_p${page}_l${allowLong}`;
   const cached = getCachedSearch(cacheKey);
-  if (cached) {
+  if (cached && cached.length > 0) {
     return res.json({ results: cached, total: cached.length, query, page, cached: true });
   }
 
@@ -147,7 +147,7 @@ app.get('/api/search', async (req, res) => {
     const wantsKaraoke = cleanQ.toLowerCase().includes('karaoke');
     const wantsInstrumental = cleanQ.toLowerCase().includes('instrumental');
 
-    // Exclude compilation/mashup keywords
+    // Exclude compilation/mashup/playlist keywords
     const excludeKeywords = [
       'podcast', 'interview', 'lecture', 'news', 'gameplay',
       'mashup', 'jukebox', '100 songs', 'top 50', 'top 100', 'top 20', 'top 30', 'top 40',
@@ -158,37 +158,36 @@ app.get('/api/search', async (req, res) => {
     const cleanSubject = cleanQ.replace(/hit songs|hits|best songs|all songs|top songs|jukebox|mix|songs|song|audio/gi, '').trim() || cleanQ;
     const lowerQ = cleanQ.toLowerCase();
 
-    // Determine the optimal single primary search query
-    let primaryQuery = cleanQ;
+    // Generate targeted query variants based on genre and requested page
+    let queryVariants = [];
     if (lowerQ.includes('phonk') || lowerQ.includes('funk')) {
-      primaryQuery = page === 1 ? 'brazilian phonk viral audio' : 'montagem phonk ultra slowed';
-    } else if (lowerQ.includes('hit songs') || lowerQ.includes('top hits') || lowerQ.includes('best songs')) {
-      primaryQuery = `${cleanSubject} official song`;
-    } else if (page > 1) {
-      primaryQuery = `${cleanSubject} song official audio`;
+      if (page === 1) queryVariants = ['phonk track official', 'phonk music official audio'];
+      else if (page === 2) queryVariants = ['drift phonk audio track', 'phonk slowed reverb official'];
+      else if (page === 3) queryVariants = ['brazilian phonk track audio', 'aggressive phonk audio'];
+      else queryVariants = [`phonk track music ${page}`];
+    } else {
+      if (page === 1) queryVariants = [`${cleanSubject} official song`, cleanQ];
+      else if (page === 2) queryVariants = [`${cleanSubject} official audio`, `${cleanSubject} audio track`];
+      else if (page === 3) queryVariants = [`${cleanSubject} popular song`, `${cleanSubject} lyrical song`];
+      else queryVariants = [`${cleanSubject} music audio ${page}`];
     }
 
-    const firstResult = await ytSearch({ query: primaryQuery }).catch(() => ({ videos: [] }));
-    let candidateVideos = [...(firstResult.videos || [])];
+    const searchResponses = await Promise.all(
+      queryVariants.map(q => ytSearch({ query: q }).catch(() => ({ videos: [] })))
+    );
 
-    // If first search returned fewer than 10 candidates, fetch one targeted fallback
-    if (candidateVideos.length < 10) {
-      const fallbackQuery = (lowerQ.includes('phonk') || lowerQ.includes('funk'))
-        ? 'phonk slow reverb audio'
-        : `${cleanSubject} lyrical video song`;
-      const secondResult = await ytSearch({ query: fallbackQuery }).catch(() => ({ videos: [] }));
-      if (secondResult && secondResult.videos) {
-        candidateVideos.push(...secondResult.videos);
+    const seenIds = new Set();
+    const candidateVideos = [];
+    for (const r of searchResponses) {
+      for (const v of (r.videos || [])) {
+        if (!v || !v.videoId || seenIds.has(v.videoId)) continue;
+        seenIds.add(v.videoId);
+        candidateVideos.push(v);
       }
     }
 
-    // Deduplicate and filter out non-music and compilation junk
-    const seenIds = new Set();
     const chosenVideos = [];
     for (const v of candidateVideos) {
-      if (!v || !v.videoId || seenIds.has(v.videoId)) continue;
-      seenIds.add(v.videoId);
-
       const titleLower = (v.title || '').toLowerCase();
       if (!allowLong && excludeKeywords.some(kw => titleLower.includes(kw))) continue;
       if (!wantsKaraoke && (titleLower.includes('karaoke') || titleLower.includes('scrolling lyrics'))) continue;
@@ -203,7 +202,9 @@ app.get('/api/search', async (req, res) => {
     }
 
     const songs = chosenVideos.map(mapVideoToSong);
-    setCachedSearch(cacheKey, songs);
+    if (songs.length > 0) {
+      setCachedSearch(cacheKey, songs);
+    }
     res.json({ results: songs, total: songs.length, query, page });
   } catch (err) {
     console.error('Search error:', err.message);

@@ -36,6 +36,8 @@ import com.zmusic.app.ZMusicApp
 import com.zmusic.app.data.downloader.SongDownloader
 import com.zmusic.app.data.model.Song
 import com.zmusic.app.data.model.SourceType
+import com.zmusic.app.ui.components.SongTagBadge
+import com.zmusic.app.ui.components.SongTagHelper
 import com.zmusic.app.ui.theme.*
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
@@ -468,6 +470,13 @@ private fun SearchResultItem(
                 overflow = TextOverflow.Ellipsis,
                 fontSize = 12.sp,
             )
+            Spacer(Modifier.height(4.dp))
+            val tags = remember(song) { SongTagHelper.getTags(song) }
+            Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                tags.take(3).forEach { tag ->
+                    SongTagBadge(tag = tag, fontSize = 9.sp)
+                }
+            }
         }
 
         // Action buttons
