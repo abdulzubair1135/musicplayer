@@ -40,6 +40,7 @@ import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
@@ -89,6 +90,7 @@ import com.zmusic.app.ui.theme.TextSecondary
 fun FullPlayerScreen(
     song: Song,
     isPlaying: Boolean,
+    isBuffering: Boolean = false,
     playbackPosition: Long,
     duration: Long,
     isShuffleEnabled: Boolean,
@@ -246,6 +248,23 @@ fun FullPlayerScreen(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
+                    if (isBuffering) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            CircularProgressIndicator(
+                                color = SecondaryCyan,
+                                modifier = Modifier.size(13.dp),
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                text = "Loading audio stream…",
+                                color = SecondaryCyan,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                    }
                 }
 
                 IconButton(onClick = onToggleFavorite) {
@@ -335,12 +354,20 @@ fun FullPlayerScreen(
                         .clip(CircleShape)
                         .background(PrimaryPurple)
                 ) {
-                    Icon(
-                        imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                        contentDescription = if (isPlaying) "Pause" else "Play",
-                        tint = Color.White,
-                        modifier = Modifier.size(40.dp)
-                    )
+                    if (isBuffering) {
+                        CircularProgressIndicator(
+                            color = Color.White,
+                            modifier = Modifier.size(34.dp),
+                            strokeWidth = 3.dp
+                        )
+                    } else {
+                        Icon(
+                            imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                            contentDescription = if (isPlaying) "Pause" else "Play",
+                            tint = Color.White,
+                            modifier = Modifier.size(40.dp)
+                        )
+                    }
                 }
 
                 // Next Button

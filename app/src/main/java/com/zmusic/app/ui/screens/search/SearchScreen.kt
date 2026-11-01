@@ -50,6 +50,7 @@ fun SearchScreen(
     onlineSongs: List<Song>,
     isNetworkAvailable: Boolean,
     currentSong: Song?,
+    isBuffering: Boolean = false,
     initialQuery: String = "",
     onPlaySong: (Song, List<Song>) -> Unit,
     onStartRadio: (Song) -> Unit,
@@ -340,6 +341,7 @@ fun SearchScreen(
                             SearchResultItem(
                                 song           = song,
                                 isPlaying      = currentSong?.id == song.id,
+                                isBuffering    = isBuffering && currentSong?.id == song.id,
                                 isDownloaded   = song.videoId != null && downloadedIds.contains(song.videoId),
                                 isDownloading  = song.videoId != null && downloadingIds.contains(song.videoId),
                                 onPlay         = { onPlaySong(song, searchResults) },
@@ -393,6 +395,7 @@ fun SearchScreen(
 private fun SearchResultItem(
     song: Song,
     isPlaying: Boolean,
+    isBuffering: Boolean = false,
     isDownloaded: Boolean,
     isDownloading: Boolean,
     onPlay: () -> Unit,
@@ -433,7 +436,15 @@ private fun SearchResultItem(
                         .background(PrimaryPurple.copy(alpha = 0.55f)),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Icon(Icons.Default.VolumeUp, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
+                    if (isBuffering) {
+                        CircularProgressIndicator(
+                            color = Color.White,
+                            modifier = Modifier.size(20.dp),
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        Icon(Icons.Default.VolumeUp, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
+                    }
                 }
             }
         }

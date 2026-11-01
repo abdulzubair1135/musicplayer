@@ -173,6 +173,7 @@ class MainActivity : ComponentActivity() {
 
         val currentSong by playerController.currentSong.collectAsState()
         val isPlaying by playerController.isPlaying.collectAsState()
+        val isBuffering by playerController.isBuffering.collectAsState()
         val playbackPosition by playerController.playbackPosition.collectAsState()
         val duration by playerController.duration.collectAsState()
         val isShuffleEnabled by playerController.isShuffleEnabled.collectAsState()
@@ -301,6 +302,7 @@ class MainActivity : ComponentActivity() {
                             MiniPlayer(
                                 song = song,
                                 isPlaying = isPlaying,
+                                isBuffering = isBuffering,
                                 progress = progress,
                                 onExpand = { isFullPlayerExpanded = true },
                                 onPlayPauseToggle = { playerController.togglePlayPause() },
@@ -402,6 +404,7 @@ class MainActivity : ComponentActivity() {
                             onlineSongs = emptyList(),
                             isNetworkAvailable = isNetworkAvailable,
                             currentSong = currentSong,
+                            isBuffering = isBuffering,
                             initialQuery = searchInitialQuery,
                             onPlaySong = playSongAction,
                             onStartRadio = startRadioAction,
@@ -460,6 +463,7 @@ class MainActivity : ComponentActivity() {
                     FullPlayerScreen(
                         song = currentSong!!,
                         isPlaying = isPlaying,
+                        isBuffering = isBuffering,
                         playbackPosition = playbackPosition,
                         duration = duration,
                         isShuffleEnabled = isShuffleEnabled,

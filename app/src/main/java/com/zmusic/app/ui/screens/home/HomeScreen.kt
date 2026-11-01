@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.TrendingUp
 import androidx.compose.material.icons.filled.WifiOff
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -142,6 +143,25 @@ fun HomeScreen(
                                 fontSize = 13.sp
                             )
                         }
+                    }
+                }
+            } else if (onlineDiscover.isEmpty() && onlineTrending.isEmpty()) {
+                // Loading banner when fetching online music
+                item {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 32.dp, horizontal = 20.dp),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        CircularProgressIndicator(
+                            color = PrimaryPurple,
+                            modifier = Modifier.size(22.dp),
+                            strokeWidth = 2.5.dp
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        Text("Loading trending music…", color = TextSecondary, fontSize = 14.sp)
                     }
                 }
             }

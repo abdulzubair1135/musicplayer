@@ -33,6 +33,9 @@ class MusicPlayerController private constructor(private val context: Context) {
     private val _isPlaying = MutableStateFlow(false)
     val isPlaying: StateFlow<Boolean> = _isPlaying.asStateFlow()
 
+    private val _isBuffering = MutableStateFlow(false)
+    val isBuffering: StateFlow<Boolean> = _isBuffering.asStateFlow()
+
     private val _playbackPosition = MutableStateFlow(0L)
     val playbackPosition: StateFlow<Long> = _playbackPosition.asStateFlow()
 
@@ -113,23 +116,85 @@ class MusicPlayerController private constructor(private val context: Context) {
                 _duration.value = controller.duration.coerceAtLeast(0L)
             }
 
-            private var consecutiveErrors = 0
+            private var lastFailedVideoId: String? = null
 
             override fun onPlaybackStateChanged(playbackState: Int) {
-                if (playbackState == Player.STATE_READY) {
-                    consecutiveErrors = 0
-                    _duration.value = controller.duration.coerceAtLeast(0L)
+                when (playbackState) {
+                    Player.STATE_BUFFERING -> {
+                        _isBuffering.value = true
+                    }
+                    Player.STATE_READY -> {
+                        _isBuffering.value = false
+                        lastFailedVideoId = null
+                        _duration.value = controller.duration.coerceAtLeast(0L)
+                    }
+                    Player.STATE_ENDED -> {
+                        _isBuffering.value = false
+                    }
+                    Player.STATE_IDLE -> {
+                        _isBuffering.value = false
+                    }
+                }
+            }
+
+            override fun onIsLoadingChanged(isLoading: Boolean) {
+                if (controller.playbackState == Player.STATE_BUFFERING) {
+                    _isBuffering.value = true
+                } else if (controller.playbackState == Player.STATE_READY) {
+                    _isBuffering.value = false
                 }
             }
 
             override fun onPlayerError(error: PlaybackException) {
+                _isBuffering.value = false
                 android.util.Log.e("MusicPlayerController", "Playback error: ${error.message}", error)
-                consecutiveErrors++
-                if (consecutiveErrors < 2 && _currentQueue.value.size > 1) {
-                    skipToNext()
-                } else {
-                    _isPlaying.value = false
-                    consecutiveErrors = 0
+
+                val current = _currentSong.value
+                val vid = current?.videoId
+                // If this online song failed and hasn't been retried yet with alternate endpoint:
+                if (current != null && !vid.isNullOrBlank() && lastFailedVideoId != vid) {
+                    lastFailedVideoId = vid
+                    _isBuffering.value = true
+                    // Try alternate source: if failed on direct chocolate, try backend stream, or vice versa
+                    val currentUri = controller.currentMediaItem?.localConfiguration?.uri?.toString() ?: ""
+                    val alternateUri = if (currentUri.contains("chocolatemoo53.com")) {
+                        val base = com.zmusic.app.data.api.ApiConfig.BASE_URL.trimEnd('/')
+                        android.net.Uri.parse("$base/api/stream/$vid")
+                    } else {
+                        android.net.Uri.parse("https://yt.chocolatemoo53.com/latest_version?id=$vid&itag=140")
+                    }
+
+                    android.util.Log.d("MusicPlayerController", "Retrying song with alternate stream: $alternateUri")
+                    val metadata = androidx.media3.common.MediaMetadata.Builder()
+                        .setTitle(current.title)
+                        .setArtist(current.artist)
+                        .setAlbumTitle(current.album)
+                        .setArtworkUri(current.artworkUri?.let { android.net.Uri.parse(it) })
+                        .build()
+
+                    val retryItem = androidx.media3.common.MediaItem.Builder()
+                        .setMediaId(current.id.toString())
+                        .setUri(alternateUri)
+                        .setMediaMetadata(metadata)
+                        .build()
+
+                    val currentIndex = controller.currentMediaItemIndex.coerceAtLeast(0)
+                    controller.replaceMediaItem(currentIndex, retryItem)
+                    controller.prepare()
+                    controller.play()
+                    return
+                }
+
+                // If retry also failed: DO NOT SKIP! Stop and notify user cleanly
+                _isPlaying.value = false
+                _isBuffering.value = false
+                lastFailedVideoId = null
+                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                    android.widget.Toast.makeText(
+                        context,
+                        "Unable to stream '${current?.title ?: "song"}'. Video format restricted.",
+                        android.widget.Toast.LENGTH_LONG
+                    ).show()
                 }
             }
         })
@@ -204,6 +269,7 @@ class MusicPlayerController private constructor(private val context: Context) {
         controller.play()
 
         _currentSong.value = sanitizedSongs.getOrNull(actualIndex)
+        _isBuffering.value = true
         AudioCacheManager.preCacheNextSongs(context, sanitizedSongs, actualIndex)
     }
 
@@ -262,7 +328,11 @@ class MusicPlayerController private constructor(private val context: Context) {
         val controller = mediaController ?: return
         if (controller.isPlaying) {
             controller.pause()
+            _isBuffering.value = false
         } else {
+            if (controller.playbackState == Player.STATE_BUFFERING) {
+                _isBuffering.value = true
+            }
             controller.play()
         }
     }
