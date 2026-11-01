@@ -1,5 +1,6 @@
 package com.zmusic.app.ui.screens.settings
 
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
@@ -14,7 +15,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Palette
@@ -24,32 +27,43 @@ import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.Timelapse
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.zmusic.app.data.api.ApiConfig
 import com.zmusic.app.data.settings.AppSettings
 import com.zmusic.app.ui.theme.PrimaryPurple
 import com.zmusic.app.ui.theme.SurfaceDark
 import com.zmusic.app.ui.theme.TextPrimary
 import com.zmusic.app.ui.theme.TextSecondary
+import kotlinx.coroutines.launch
 
 @Composable
 fun SettingsScreen(
@@ -58,9 +72,92 @@ fun SettingsScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val appSettings = remember { AppSettings.getInstance(context) }
     val allowLongTracks by appSettings.allowLongTracks.collectAsState()
     var rememberPosition by remember { mutableStateOf(true) }
+
+    var currentServerUrl by remember { mutableStateOf(ApiConfig.BASE_URL) }
+    var serverStatus by remember { mutableStateOf("Checking...") }
+    var isCheckingServer by remember { mutableStateOf(false) }
+    var showServerDialog by remember { mutableStateOf(false) }
+    var inputUrl by remember { mutableStateOf("") }
+
+    fun testServer(url: String) {
+        scope.launch {
+            isCheckingServer = true
+            serverStatus = "Pinging..."
+            val ok = ApiConfig.checkServerHealth(url)
+            serverStatus = if (ok) "🟢 Connected (Live)" else "🔴 Offline / Suspended"
+            isCheckingServer = false
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        testServer(ApiConfig.BASE_URL)
+    }
+
+    if (showServerDialog) {
+        AlertDialog(
+            onDismissRequest = { showServerDialog = false },
+            title = { Text("Backend Server URL", color = TextPrimary) },
+            text = {
+                Column {
+                    Text(
+                        "Enter your Node.js backend URL (Render, Koyeb, or Local):",
+                        color = TextSecondary,
+                        fontSize = 13.sp
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = inputUrl,
+                        onValueChange = { inputUrl = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        placeholder = { Text("https://your-app.onrender.com/", color = TextSecondary) }
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Row {
+                        OutlinedButton(
+                            onClick = { inputUrl = ApiConfig.LOCAL_URL },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Use Local", fontSize = 11.sp)
+                        }
+                        Spacer(Modifier.width(8.dp))
+                        OutlinedButton(
+                            onClick = { inputUrl = ApiConfig.DEFAULT_CLOUD_URL },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Use Cloud", fontSize = 11.sp)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (inputUrl.isNotBlank()) {
+                            ApiConfig.saveServerUrl(context, inputUrl.trim())
+                            currentServerUrl = ApiConfig.BASE_URL
+                            showServerDialog = false
+                            testServer(ApiConfig.BASE_URL)
+                            Toast.makeText(context, "Server URL updated!", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryPurple)
+                ) {
+                    Text("Save")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showServerDialog = false }) {
+                    Text("Cancel", color = TextSecondary)
+                }
+            },
+            containerColor = SurfaceDark
+        )
+    }
 
     LazyColumn(
         modifier = modifier
@@ -91,14 +188,63 @@ fun SettingsScreen(
             SettingsItem(
                 icon = Icons.Default.Folder,
                 title = "Music Folders",
-                subtitle = "Default storage / Music directory",
+                subtitle = "Default Android Music directory",
                 onClick = {}
             )
         }
 
-        // Section 2: Playback
+        // Section 2: Online Music & Cloud Server
         item {
-            SettingsCategoryHeader(title = "PLAYBACK & DURATION FILTER")
+            SettingsCategoryHeader(title = "ONLINE STREAMING & SERVER")
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 6.dp),
+                colors = CardDefaults.cardColors(containerColor = SurfaceDark)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Dns, contentDescription = null, tint = PrimaryPurple, modifier = Modifier.size(24.dp))
+                        Spacer(Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Backend Server", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                            Text(currentServerUrl, color = TextSecondary, fontSize = 12.sp, maxLines = 1)
+                        }
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Status: $serverStatus", color = if (serverStatus.contains("Live")) Color(0xFF4CAF50) else Color(0xFFFF5252), fontSize = 13.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                        if (isCheckingServer) {
+                            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = PrimaryPurple)
+                            Spacer(Modifier.width(8.dp))
+                        }
+                        OutlinedButton(
+                            onClick = { testServer(currentServerUrl) },
+                            modifier = Modifier.height(34.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                        ) {
+                            Text("Ping", fontSize = 12.sp)
+                        }
+                        Spacer(Modifier.width(6.dp))
+                        Button(
+                            onClick = {
+                                inputUrl = currentServerUrl
+                                showServerDialog = true
+                            },
+                            modifier = Modifier.height(34.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = PrimaryPurple),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                        ) {
+                            Text("Change", fontSize = 12.sp)
+                        }
+                    }
+                }
+            }
+
+            // Duration Filter Switch
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -113,9 +259,9 @@ fun SettingsScreen(
                 )
                 Spacer(modifier = Modifier.width(16.dp))
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(text = "Allow Long Mixes & Podcasts (> 5 min)", color = TextPrimary, fontSize = 16.sp, fontWeight = FontWeight.Medium)
+                    Text(text = "Allow All / Long Songs (>5 mins)", color = TextPrimary, fontSize = 16.sp, fontWeight = FontWeight.Medium)
                     Text(
-                        text = if (allowLongTracks) "Allowed: Long DJ mixes and podcasts included" else "Filtered: Max 5 minutes (clean single songs only)",
+                        text = if (allowLongTracks) "Showing all songs, DJ mixes & podcasts" else "Standard songs only (≤ 5 mins, no long mixes)",
                         color = TextSecondary,
                         fontSize = 13.sp
                     )
@@ -126,7 +272,17 @@ fun SettingsScreen(
                     colors = SwitchDefaults.colors(checkedThumbColor = PrimaryPurple)
                 )
             }
+        }
 
+        // Section 3: Playback
+        item {
+            SettingsCategoryHeader(title = "PLAYBACK")
+            SettingsItem(
+                icon = Icons.Default.Timer,
+                title = "Sleep Timer",
+                subtitle = "Turn off playback automatically",
+                onClick = {}
+            )
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -152,7 +308,7 @@ fun SettingsScreen(
             }
         }
 
-        // Section 3: Share App
+        // Section 4: Share App
         item {
             SettingsCategoryHeader(title = "SHARE WITH FRIENDS")
             SettingsItem(
@@ -163,7 +319,7 @@ fun SettingsScreen(
             )
         }
 
-        // Section 3: Appearance
+        // Section 5: Appearance
         item {
             SettingsCategoryHeader(title = "APPEARANCE")
             SettingsItem(
@@ -174,7 +330,7 @@ fun SettingsScreen(
             )
         }
 
-        // Section 4: Privacy & Data
+        // Section 6: Privacy & Data
         item {
             SettingsCategoryHeader(title = "PRIVACY & STORAGE")
             SettingsItem(
@@ -191,7 +347,7 @@ fun SettingsScreen(
             )
         }
 
-        // Section 5: About
+        // Section 7: About
         item {
             SettingsCategoryHeader(title = "ABOUT")
             Card(
@@ -213,8 +369,8 @@ fun SettingsScreen(
                     Spacer(modifier = Modifier.width(16.dp))
                     Column {
                         Text(text = "Z-Music", fontWeight = FontWeight.Bold, color = TextPrimary, fontSize = 18.sp)
-                        Text(text = "Version 1.0.0 (Release APK Build)", color = TextSecondary, fontSize = 13.sp)
-                        Text(text = "Built with Kotlin & Jetpack Compose", color = TextSecondary, fontSize = 12.sp)
+                        Text(text = "Version 1.0.0 (by Project X²)", color = TextSecondary, fontSize = 13.sp)
+                        Text(text = "Direct High-Speed YouTube Engine", color = TextSecondary, fontSize = 12.sp)
                     }
                 }
             }
@@ -266,7 +422,7 @@ private fun shareAppApk(context: android.content.Context) {
         val appInfo = context.applicationInfo
         val sourceApk = java.io.File(appInfo.sourceDir)
         if (!sourceApk.exists()) {
-            android.widget.Toast.makeText(context, "APK file not found", android.widget.Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "APK file not found", Toast.LENGTH_SHORT).show()
             return
         }
 
@@ -293,6 +449,6 @@ private fun shareAppApk(context: android.content.Context) {
         context.startActivity(chooser)
     } catch (e: Exception) {
         android.util.Log.e("SettingsScreen", "Failed to share APK", e)
-        android.widget.Toast.makeText(context, "Error sharing APK: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
+        Toast.makeText(context, "Error sharing APK: ${e.message}", Toast.LENGTH_LONG).show()
     }
 }

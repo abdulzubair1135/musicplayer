@@ -20,7 +20,7 @@ class ZMusicApp : Application() {
         playerController = MusicPlayerController.getInstance(this)
         kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
             com.zmusic.app.data.api.ApiConfig.triggerEagerWakeup()
-            com.zmusic.app.data.api.ApiConfig.autoDetectFastestServer()
+            com.zmusic.app.data.api.ApiConfig.autoDetectFastestServer(this@ZMusicApp)
         }
     }
 

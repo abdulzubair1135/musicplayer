@@ -113,15 +113,24 @@ class MusicPlayerController private constructor(private val context: Context) {
                 _duration.value = controller.duration.coerceAtLeast(0L)
             }
 
+            private var consecutiveErrors = 0
+
             override fun onPlaybackStateChanged(playbackState: Int) {
                 if (playbackState == Player.STATE_READY) {
+                    consecutiveErrors = 0
                     _duration.value = controller.duration.coerceAtLeast(0L)
                 }
             }
 
             override fun onPlayerError(error: PlaybackException) {
                 android.util.Log.e("MusicPlayerController", "Playback error: ${error.message}", error)
-                skipToNext()
+                consecutiveErrors++
+                if (consecutiveErrors < 2 && _currentQueue.value.size > 1) {
+                    skipToNext()
+                } else {
+                    _isPlaying.value = false
+                    consecutiveErrors = 0
+                }
             }
         })
     }

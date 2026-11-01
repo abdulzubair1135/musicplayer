@@ -127,7 +127,7 @@ fun SearchScreen(
         snapshotFlow {
             val totalItems = searchResults.size
             val lastVisibleIndex = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-            totalItems > 0 && lastVisibleIndex >= (totalItems - 3)
+            totalItems >= 8 && lastVisibleIndex >= (totalItems - 2)
         }
         .filter { it }
         .collect {

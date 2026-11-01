@@ -1,0 +1,17 @@
+name: Keep Z-Music Backend Alive
+
+on:
+  schedule:
+    # Trigger every 14 minutes to prevent Render 15-minute inactivity spin down
+    - cron: '*/14 * * * *'
+  workflow_dispatch:
+
+jobs:
+  ping:
+    name: Ping Render Backend
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping API Health
+        run: |
+          echo "Pinging Z-Music API..."
+          curl -s -f -m 20 https://musicplayer-blyl.onrender.com/api/health || true

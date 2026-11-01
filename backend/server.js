@@ -1,14 +1,14 @@
 require('dotenv').config();
+const http = require('http');
+const https = require('https');
 const express = require('express');
 const cors = require('cors');
 const compression = require('compression');
 const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
 const ytSearch = require('yt-search');
-const { Ytdl, chooseFormat, Client } = require('@distube/ytdl-core');
-const ytdl = new Ytdl({
-  clients: [Client.VisionOS, Client.Tv, Client.WebEmbedded]
-});
+const { Ytdl, chooseFormat } = require('@distube/ytdl-core');
+const ytdl = new Ytdl();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -273,13 +273,33 @@ app.get('/api/lyrics', async (req, res) => {
   }
 });
 
-const https = require('https');
-const http = require('http');
+// Cache format URLs for 30 minutes to avoid re-extracting for player seeks
+const streamFormatCache = new Map();
+const STREAM_CACHE_TTL = 30 * 60 * 1000;
 
-// In-memory cache for audio streaming URLs (15 mins TTL)
-const streamUrlCache = new Map();
+async function getAudioFormat(videoId) {
+  const cached = streamFormatCache.get(videoId);
+  if (cached && (Date.now() - cached.time < STREAM_CACHE_TTL)) {
+    return cached.format;
+  }
+  const info = await ytdl.getInfo(videoId);
+  const audioFormats = info.formats.filter(f => f.hasAudio && !f.hasVideo && f.url);
+  // Prefer itag 140 (128kbps AAC M4A) or highest audio
+  const format = audioFormats.find(f => f.itag === 140) ||
+                 chooseFormat(audioFormats, { quality: 'highestaudio' }) ||
+                 audioFormats[0];
+  if (format && format.url) {
+    if (streamFormatCache.size > 200) {
+      const oldest = streamFormatCache.keys().next().value;
+      streamFormatCache.delete(oldest);
+    }
+    streamFormatCache.set(videoId, { format, time: Date.now() });
+    return format;
+  }
+  return null;
+}
 
-// ── Stream Audio ──
+// ── Stream Audio (Reliable Direct Proxy with HTTP 206 Seek Support) ──
 // GET /api/stream/:videoId
 app.get('/api/stream/:videoId', async (req, res) => {
   const { videoId } = req.params;
@@ -288,46 +308,56 @@ app.get('/api/stream/:videoId', async (req, res) => {
     return res.status(400).json({ error: 'Invalid video ID.' });
   }
 
-  // High-speed audio stream endpoint (itag 140 = 128kbps AAC M4A audio)
-  const streamEndpoint = `https://yt.chocolatemoo53.com/latest_version?id=${videoId}&itag=140`;
-
-  if (req.query.proxy !== 'true') {
-    return res.redirect(302, streamEndpoint);
-  }
-
-  // Fallback proxy if explicitly requested
-  const proxyHeaders = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-  };
-  if (req.headers.range) {
-    proxyHeaders['Range'] = req.headers.range;
-  }
-
-  const followRedirect = (url, depth = 0) => {
-    if (depth > 5) {
-      if (!res.headersSent) res.status(500).json({ error: 'Too many redirects' });
-      return;
+  try {
+    const format = await getAudioFormat(videoId);
+    if (!format || !format.url) {
+      return res.status(404).json({ error: 'No audio format found.' });
     }
-    const client = url.startsWith('https') ? https : http;
-    const proxyReq = client.get(url, { headers: proxyHeaders }, (proxyRes) => {
-      if (proxyRes.statusCode >= 300 && proxyRes.statusCode < 400 && proxyRes.headers.location) {
-        return followRedirect(proxyRes.headers.location, depth + 1);
-      }
-      res.writeHead(proxyRes.statusCode, {
-        'Content-Type': proxyRes.headers['content-type'] || 'audio/mp4',
+
+    const proxyHeaders = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'Accept': '*/*',
+    };
+    if (req.headers.range) {
+      proxyHeaders['Range'] = req.headers.range;
+    }
+
+    const client = format.url.startsWith('https') ? https : http;
+    const proxyReq = client.get(format.url, { headers: proxyHeaders }, (proxyRes) => {
+      // Forward headers
+      const responseHeaders = {
+        'Content-Type': format.mimeType?.split(';')[0] || 'audio/mp4',
         'Accept-Ranges': 'bytes',
         'Access-Control-Allow-Origin': '*',
         'Cache-Control': 'public, max-age=3600',
-      });
+      };
+      if (proxyRes.headers['content-length']) {
+        responseHeaders['Content-Length'] = proxyRes.headers['content-length'];
+      }
+      if (proxyRes.headers['content-range']) {
+        responseHeaders['Content-Range'] = proxyRes.headers['content-range'];
+      }
+
+      res.writeHead(proxyRes.statusCode, responseHeaders);
+      if (req.method === 'HEAD') {
+        proxyReq.destroy();
+        return res.end();
+      }
       proxyRes.pipe(res);
     });
+
     proxyReq.on('error', (err) => {
+      console.error('Audio stream proxy error:', err.message);
       if (!res.headersSent) res.status(500).json({ error: err.message });
     });
-    req.on('close', () => proxyReq.destroy());
-  };
 
-  followRedirect(streamEndpoint);
+    req.on('close', () => {
+      proxyReq.destroy();
+    });
+  } catch (err) {
+    console.error('Audio extraction error for video', videoId, ':', err.message);
+    if (!res.headersSent) res.status(500).json({ error: 'Failed to extract stream: ' + err.message });
+  }
 });
 
 // ── Direct Download Endpoint ──
@@ -337,30 +367,19 @@ app.get('/api/download/:videoId', async (req, res) => {
   if (!videoId || !/^[a-zA-Z0-9_-]{11}$/.test(videoId)) {
     return res.status(400).json({ error: 'Invalid video ID.' });
   }
-  const streamEndpoint = `https://yt.chocolatemoo53.com/latest_version?id=${videoId}&itag=140`;
-  res.redirect(302, streamEndpoint);
-});
-
-  if (!videoId || !/^[a-zA-Z0-9_-]{11}$/.test(videoId)) {
-    return res.status(400).json({ error: 'Invalid video ID.' });
-  }
 
   try {
-    const info = await ytdl.getInfo(videoId);
-    const audioFormats = info.formats.filter(f => f.hasAudio && !f.hasVideo && f.url);
-    const format = chooseFormat(audioFormats, { quality: 'highestaudio' }) || audioFormats[0];
-
+    const format = await getAudioFormat(videoId);
     if (!format || !format.url) {
       return res.status(404).json({ error: 'No audio format available.' });
     }
 
-    const title = (info.videoDetails?.title || videoId).replace(/[^a-zA-Z0-9_-]/g, '_');
+    const title = videoId;
     const ext = format.mimeType?.includes('mp4') ? 'm4a' : 'webm';
     const client = format.url.startsWith('https') ? https : http;
 
     res.setHeader('Content-Disposition', `attachment; filename="${title}.${ext}"`);
     res.setHeader('Content-Type', format.mimeType?.split(';')[0] || 'audio/mp4');
-
     if (format.contentLength) {
       res.setHeader('Content-Length', format.contentLength);
     }
@@ -373,15 +392,12 @@ app.get('/api/download/:videoId', async (req, res) => {
 
     proxyReq.on('error', (err) => {
       console.error('Download stream error:', err.message);
-      if (!res.headersSent) {
-        res.status(500).end();
-      }
+      if (!res.headersSent) res.status(500).end();
     });
 
     req.on('close', () => {
       proxyReq.destroy();
     });
-
   } catch (err) {
     console.error('Download error:', err.message);
     if (!res.headersSent) {
