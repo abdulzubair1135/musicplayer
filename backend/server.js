@@ -8,7 +8,7 @@ const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
 const ytSearch = require('yt-search');
 const { Ytdl, chooseFormat } = require('@distube/ytdl-core');
-const ytdl = new Ytdl({ clients: ['tv', 'web_embedded', 'mweb'] });
+const ytdl = new Ytdl({ clients: ['web_embedded', 'tv', 'mweb'] });
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -80,7 +80,7 @@ app.get('/api/health', (req, res) => {
   res.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
-    version: '2.0.2-datacenter-clients',
+    version: '2.0.3-patched-timeout',
     nodeVersion: process.version,
     platform: process.platform
   });

@@ -5,6 +5,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
+    "postinstall": "node patch-ytdl.js",
     "dev": "nodemon server.js"
   },
   "engines": {
