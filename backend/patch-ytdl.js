@@ -1,16 +1,24 @@
 const fs = require('fs');
 const path = require('path');
 
-const target = path.join(__dirname, 'node_modules', '@distube', 'ytdl-core', 'dist', 'solver', 'worker.js');
-if (fs.existsSync(target)) {
-  let content = fs.readFileSync(target, 'utf8');
-  if (content.includes('const TIMEOUT_MS = 2000;')) {
-    content = content.replace('const TIMEOUT_MS = 2000;', 'const TIMEOUT_MS = 15000;');
-    fs.writeFileSync(target, content, 'utf8');
-    console.log('✅ Successfully patched @distube/ytdl-core solver worker timeout to 15000ms');
-  } else {
-    console.log('ℹ️ worker.js already patched or pattern not found');
-  }
+// 1. Patch solver/worker.js TIMEOUT_MS
+const workerTarget = path.join(__dirname, 'node_modules', '@distube', 'ytdl-core', 'dist', 'solver', 'worker.js');
+if (fs.existsSync(workerTarget)) {
+  let content = fs.readFileSync(workerTarget, 'utf8');
+  content = content.replace(/const TIMEOUT_MS = \d+;/, 'const TIMEOUT_MS = 60000;');
+  fs.writeFileSync(workerTarget, content, 'utf8');
+  console.log('✅ Patched worker.js TIMEOUT_MS to 60000ms');
 } else {
-  console.log('⚠️ worker.js not found at', target);
+  console.log('⚠️ workerTarget not found:', workerTarget);
+}
+
+// 2. Patch solver/index.js CALL_DEADLINE_MS
+const indexTarget = path.join(__dirname, 'node_modules', '@distube', 'ytdl-core', 'dist', 'solver', 'index.js');
+if (fs.existsSync(indexTarget)) {
+  let content = fs.readFileSync(indexTarget, 'utf8');
+  content = content.replace(/const CALL_DEADLINE_MS = [0-9_]+;/, 'const CALL_DEADLINE_MS = 60_000;');
+  fs.writeFileSync(indexTarget, content, 'utf8');
+  console.log('✅ Patched index.js CALL_DEADLINE_MS to 60_000ms');
+} else {
+  console.log('⚠️ indexTarget not found:', indexTarget);
 }

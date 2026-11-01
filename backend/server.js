@@ -80,7 +80,7 @@ app.get('/api/health', (req, res) => {
   res.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
-    version: '2.0.3-patched-timeout',
+    version: '2.0.4-solver-extended-deadline',
     nodeVersion: process.version,
     platform: process.platform
   });
